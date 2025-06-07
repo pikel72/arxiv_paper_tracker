@@ -19,18 +19,53 @@ git clone https://github.com/你的用户名/arxiv_paper_tracker.git
 cd arxiv_paper_tracker
 ```
 
-2. 在 GitHub 仓库设置中配置 Secrets（Settings > Secrets and variables > Actions）：
+在 GitHub 仓库中，进入 **Settings → Secrets and variables → Actions**，点击 **Secrets** 标签页，添加以下敏感信息：
 
-需要添加以下 Secrets：
-- `DEEPSEEK_API_KEY`: DeepSeek API 密钥
-- `SMTP_SERVER`: 邮件服务器地址（如：smtp.qq.com）
-- `SMTP_PORT`: 邮件服务器端口（如：587）
-- `SMTP_USERNAME`: 邮箱账号
-- `SMTP_PASSWORD`: 邮箱授权码
-- `EMAIL_FROM`: 发件人邮箱
+```
+DEEPSEEK_API_KEY=sk-your-deepseek-api-key
+SMTP_SERVER=smtp.qq.com
+SMTP_PORT=587
+SMTP_USERNAME=your_qq@qq.com
+SMTP_PASSWORD=your_qq_authorization_code
+EMAIL_FROM=your_qq@qq.com
+EMAIL_TO=recipient@email.com
+```
+
+**Secrets 配置说明：**
+- `DEEPSEEK_API_KEY`: 从 [DeepSeek 官网](https://platform.deepseek.com/) 获取的 API 密钥
+- `SMTP_SERVER`: 邮件服务器地址
+- `SMTP_PORT`: SMTP 端口（QQ邮箱建议使用587）
+- `SMTP_USERNAME`: 发送邮件的邮箱账号
+- `SMTP_PASSWORD`: 邮箱授权码（不是登录密码）
+- `EMAIL_FROM`: 发件人邮箱（通常与SMTP_USERNAME相同）
 - `EMAIL_TO`: 收件人邮箱
 
-3. 安装依赖（本地测试时需要）：
+#### GitHub Variables 配置（非敏感配置）
+
+在同一页面点击 **Variables** 标签页，添加以下可公开的配置：
+
+```
+ARXIV_CATEGORIES=math.AP
+MAX_PAPERS=40
+SEARCH_DAYS=7
+PRIORITY_TOPICS=Navier-Stokes方程|Euler方程|湍流|涡度
+SECONDARY_TOPICS=色散偏微分方程|调和分析|极大算子
+PRIORITY_ANALYSIS_DELAY=3
+SECONDARY_ANALYSIS_DELAY=2
+EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
+```
+
+**Variables 配置说明：**
+- `ARXIV_CATEGORIES`: ArXiv 论文类别，用逗号分隔（如：`math.AP,math.NA`）
+- `MAX_PAPERS`: 每次获取的最大论文数量
+- `SEARCH_DAYS`: 搜索最近几天的论文
+- `PRIORITY_TOPICS`: 重点关注主题，用 `|` 分隔，与之相关的论文会进行完整分析
+- `SECONDARY_TOPICS`: 了解领域主题，用 `|` 分隔，与之相关的论文只翻译摘要
+- `PRIORITY_ANALYSIS_DELAY`: 重点论文分析间隔时间（秒）
+- `SECONDARY_ANALYSIS_DELAY`: 摘要翻译间隔时间（秒）
+- `EMAIL_SUBJECT_PREFIX`: 邮件主题前缀
+
+4. 安装依赖（本地测试时需要）：
 ```bash
 pip install -r requirements.txt
 ```
@@ -52,13 +87,7 @@ pip install -r requirements.txt
 
 ## 配置说明
 
-### 论文类别
-默认追踪以下类别：
-- cs.AI（人工智能）
-- cs.LG（机器学习）
-- cs.CL（计算语言学）
 
-可以在 `src/main.py` 中修改 `CATEGORIES` 变量来调整追踪的论文类别。
 
 ### 邮件配置
 支持主流邮箱服务：
