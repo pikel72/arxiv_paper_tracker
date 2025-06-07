@@ -64,7 +64,7 @@ jobs:
         python main.py
     
     - name: Upload analysis results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # 升级到 v4
       if: always()  # 即使脚本失败也上传结果
       with:
         name: arxiv-analysis-results-${{ github.run_number }}
