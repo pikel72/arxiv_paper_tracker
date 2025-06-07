@@ -372,19 +372,22 @@ def delete_pdf(pdf_path):
     except Exception as e:
         logger.error(f"删除PDF文件失败 {pdf_path}: {str(e)}")
 
-def send_email(content):
-    """发送邮件，支持QQ邮箱，改进错误处理，优化字体样式"""
+def send_email(content, attachment_path=None):
+    """发送邮件，支持QQ邮箱，改进错误处理，优化字体样式，支持附件"""
     if not all([SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM]) or not EMAIL_TO:
         logger.error("邮件配置不完整，跳过发送邮件")
         return
 
     try:
-        # 创建邮件
-        msg = MIMEMultipart('alternative')
+        # 创建邮件容器，支持附件
+        msg = MIMEMultipart('mixed')
         msg['From'] = EMAIL_FROM
         msg['To'] = ", ".join(EMAIL_TO)
         msg['Subject'] = f"{EMAIL_SUBJECT_PREFIX} - {datetime.datetime.now().strftime('%Y-%m-%d')}"
 
+        # 创建邮件正文部分
+        body_part = MIMEMultipart('alternative')
+        
         # 转换Markdown为HTML，使用更小的字体
         html_content = content
         
@@ -422,6 +425,10 @@ def send_email(content):
         html_content = html_content.replace('</h2></p>', '</h2>')
         html_content = html_content.replace('<p><h3>', '<h3>')
         html_content = html_content.replace('</h3></p>', '</h3>')
+        
+        # 为翻译内容添加特殊样式
+        html_content = html_content.replace('**中文标题**:', '<strong style="color: #e74c3c; font-size: 14px;">中文标题</strong>:')
+        html_content = html_content.replace('**摘要翻译**:', '<strong style="color: #e74c3c; font-size: 14px;">摘要翻译</strong>:')
         
         # 创建完整的HTML文档
         final_html = f"""
@@ -481,6 +488,11 @@ def send_email(content):
         a:hover {{
             text-decoration: underline;
         }}
+        /* 翻译内容特殊样式 */
+        .translation-content {{
+            font-size: 14px;
+            line-height: 1.5;
+        }}
     </style>
 </head>
 <body>
@@ -491,11 +503,28 @@ def send_email(content):
 </html>
         """
         
-        # 添加文本和HTML版本
+        # 添加文本和HTML版本到正文部分
         part1 = MIMEText(content, 'plain', 'utf-8')
         part2 = MIMEText(final_html, 'html', 'utf-8')
-        msg.attach(part1)
-        msg.attach(part2)
+        body_part.attach(part1)
+        body_part.attach(part2)
+        
+        # 将正文部分添加到主邮件
+        msg.attach(body_part)
+        
+        # 添加附件
+        if attachment_path and attachment_path.exists():
+            try:
+                from email.mime.application import MIMEApplication
+                
+                with open(attachment_path, 'rb') as f:
+                    attach = MIMEApplication(f.read(), _subtype='octet-stream')
+                    attach.add_header('Content-Disposition', 'attachment', 
+                                    filename=f'{attachment_path.name}')
+                    msg.attach(attach)
+                    logger.info(f"已添加附件: {attachment_path.name}")
+            except Exception as e:
+                logger.warning(f"添加附件失败: {str(e)}")
 
         # 连接到SMTP服务器
         logger.info(f"正在连接到 {SMTP_SERVER}:{SMTP_PORT}")
@@ -519,7 +548,6 @@ def send_email(content):
         
         # 发送邮件
         logger.info(f"正在发送邮件给: {EMAIL_TO}")
-        # 使用sendmail方法替代send_message，避免响应解析问题
         text = msg.as_string()
         server.sendmail(EMAIL_FROM, EMAIL_TO, text)
         
@@ -527,10 +555,10 @@ def send_email(content):
         try:
             server.quit()
         except:
-            # 如果quit()失败，直接关闭连接
             server.close()
 
-        logger.info(f"邮件发送成功，收件人: {', '.join(EMAIL_TO)}")
+        attachment_info = f" (包含附件: {attachment_path.name})" if attachment_path and attachment_path.exists() else ""
+        logger.info(f"邮件发送成功，收件人: {', '.join(EMAIL_TO)}{attachment_info}")
         return True
         
     except Exception as e:
@@ -539,7 +567,7 @@ def send_email(content):
         error_str = str(e)
         if "b'\\x00\\x00\\x00\\x00'" in error_str or "(-1," in error_str:
             logger.warning("邮件可能已发送成功，但服务器响应异常。请检查收件箱。")
-            return True  # 假设邮件已发送成功
+            return True
         
         # 提供更详细的错误信息
         import traceback
@@ -612,9 +640,14 @@ def main():
     # 将分析结果写入带时间戳的.md文件
     result_file = write_to_conclusion(priority_analyses, secondary_analyses)
     
-    # 发送邮件
+    # 发送邮件，包含附件
     email_content = format_email_content(priority_analyses, secondary_analyses)
-    send_email(email_content)
+    email_success = send_email(email_content, attachment_path=result_file)
+    
+    if email_success:
+        logger.info("邮件发送完成")
+    else:
+        logger.warning("邮件发送可能失败，请手动检查")
     
     logger.info("ArXiv论文追踪和分析完成")
     logger.info(f"结果已保存至 {result_file.absolute()}")
