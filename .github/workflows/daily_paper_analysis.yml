@@ -8,7 +8,7 @@ on:
 jobs:
   analyze-papers:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # 设置超时时间为5分钟
+    timeout-minutes: 40  # 设置超时时间为40分钟
     
     steps:
     - uses: actions/checkout@v3
@@ -27,6 +27,11 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-papers-
     
+    - name: Create necessary directories
+      run: |
+        mkdir -p papers
+        mkdir -p results
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -34,6 +39,7 @@ jobs:
     
     - name: Run paper analysis
       env:
+        # API和邮件配置 (敏感信息)
         DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
         SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -41,14 +47,31 @@ jobs:
         SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        # ArXiv搜索配置
+        ARXIV_CATEGORIES: ${{ vars.ARXIV_CATEGORIES || 'math.AP' }}
+        MAX_PAPERS: ${{ vars.MAX_PAPERS || '3' }}
+        SEARCH_DAYS: ${{ vars.SEARCH_DAYS || '7' }}
+        # 主题过滤配置
+        PRIORITY_TOPICS: ${{ vars.PRIORITY_TOPICS || 'Navier-Stokes方程|Euler方程|湍流' }}
+        SECONDARY_TOPICS: ${{ vars.SECONDARY_TOPICS || '色散偏微分方程|调和分析|极大算子' }}
+        # API调用延时配置
+        PRIORITY_ANALYSIS_DELAY: ${{ vars.PRIORITY_ANALYSIS_DELAY || '3' }}
+        SECONDARY_ANALYSIS_DELAY: ${{ vars.SECONDARY_ANALYSIS_DELAY || '2' }}
+        # 邮件配置
+        EMAIL_SUBJECT_PREFIX: ${{ vars.EMAIL_SUBJECT_PREFIX || 'ArXiv论文分析报告' }}
       run: |
         cd src
         python main.py
     
-    - name: Commit and push changes
+    - name: Upload analysis results
+      uses: actions/upload-artifact@v3
+      if: always()  # 即使脚本失败也上传结果
+      with:
+        name: arxiv-analysis-results-${{ github.run_number }}
+        path: results/
+        retention-days: 30
+    
+    - name: Clean up temporary files
       run: |
-        git config --global user.name 'curryfromuestc'
-        git config --global user.email 'curryfromuestc@gmail.com'
-        git add .
-        git commit -m "Update paper analysis for $(date +'%Y-%m-%d')" || echo "No changes to commit"
-        git push 
+        rm -rf papers/*.pdf
+
