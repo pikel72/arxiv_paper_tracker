@@ -1,0 +1,110 @@
+# config.py - 配置文件
+
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
+
+# 配置
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GLM_API_KEY = os.getenv("GLM_API_KEY")
+QWEN_API_KEY = os.getenv("QWEN_API_KEY")
+
+# AI模型配置
+AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek")  # 支持: deepseek, openai, glm
+AI_MODEL = os.getenv("AI_MODEL", "deepseek-chat")  # 模型名称
+SMTP_SERVER = os.getenv("SMTP_SERVER")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+EMAIL_FROM = os.getenv("EMAIL_FROM")
+# 支持多个收件人邮箱，用逗号分隔
+EMAIL_TO = [email.strip() for email in os.getenv("EMAIL_TO", "").split(",") if email.strip()]
+
+PAPERS_DIR = Path("./papers")
+RESULTS_DIR = Path("./results")
+
+# 从环境变量读取配置，如果没有则使用默认值
+CATEGORIES = [cat.strip() for cat in os.getenv("ARXIV_CATEGORIES", "math.AP").split(",") if cat.strip()]
+MAX_PAPERS = int(os.getenv("MAX_PAPERS", "50"))
+SEARCH_DAYS = int(os.getenv("SEARCH_DAYS", "5"))
+
+# 主题过滤列表从环境变量读取
+default_priority_topics = [
+    "流体力学中偏微分方程的数学理论",
+    "Navier-Stokes方程",
+    "Euler方程", 
+    "Prandtl方程",
+    "湍流",
+    "涡度"
+]
+
+default_secondary_topics = [
+    "色散偏微分方程的数学理论",
+    "双曲偏微分方程的数学理论", 
+    "调和分析",
+    "极大算子",
+    "椭圆偏微分方程",
+    "抛物偏微分方程"
+]
+
+# 从环境变量读取主题列表，使用 | 分隔
+PRIORITY_TOPICS = os.getenv("PRIORITY_TOPICS", "|".join(default_priority_topics)).split("|")
+SECONDARY_TOPICS = os.getenv("SECONDARY_TOPICS", "|".join(default_secondary_topics)).split("|")
+
+# API调用延时配置
+PRIORITY_ANALYSIS_DELAY = int(os.getenv("PRIORITY_ANALYSIS_DELAY", "3"))  # 重点论文分析延时（秒）
+SECONDARY_ANALYSIS_DELAY = int(os.getenv("SECONDARY_ANALYSIS_DELAY", "2"))  # 摘要翻译延时（秒）
+
+# 邮件配置
+EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX", "ArXiv论文分析报告")
+
+
+class AIClient:
+    """通用AI客户端，支持多个AI提供商"""
+    
+    def __init__(self, provider="deepseek", model="deepseek-chat"):
+        self.provider = provider
+        self.model = model
+        
+        if provider == "deepseek":
+            import openai
+            openai.api_key = DEEPSEEK_API_KEY
+            openai.api_base = "https://api.deepseek.com/v1"
+            self.client = openai
+        elif provider == "openai":
+            import openai
+            openai.api_key = OPENAI_API_KEY
+            openai.api_base = "https://api.openai.com/v1"
+            self.client = openai
+        elif provider == "glm":
+            import openai
+            openai.api_key = GLM_API_KEY
+            openai.api_base = "https://open.bigmodel.cn/api/paas/v4/"
+            self.client = openai
+        elif provider == "qwen":
+            import openai
+            openai.api_key = QWEN_API_KEY
+            openai.api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            self.client = openai
+        else:
+            raise ValueError(f"不支持的AI提供商: {provider}")
+    
+    def chat_completion(self, messages, **kwargs):
+        """统一的聊天完成接口"""
+        try:
+            response = self.client.ChatCompletion.create(
+                model=self.model,
+                messages=messages,
+                **kwargs
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            raise Exception(f"AI API调用失败 ({self.provider}): {str(e)}")
+
+
+# 创建全局AI客户端实例
+ai_client = AIClient(AI_PROVIDER, AI_MODEL)

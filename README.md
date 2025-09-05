@@ -19,10 +19,19 @@ git clone https://github.com/你的用户名/arxiv_paper_tracker.git
 cd arxiv_paper_tracker
 ```
 
-在 GitHub 仓库中，进入 **Settings → Secrets and variables → Actions**，点击 **Secrets** 标签页，添加以下敏感信息：
+2. 配置环境变量：
+```bash
+cp .env.example .env
+# 编辑 .env 文件，填入您的API密钥和其他配置
+```
+
+3. 在 GitHub 仓库中，进入 **Settings → Secrets and variables → Actions**，点击 **Secrets** 标签页，添加以下敏感信息：
 
 ```
 DEEPSEEK_API_KEY=sk-your-deepseek-api-key
+OPENAI_API_KEY=sk-your-openai-api-key
+GLM_API_KEY=your-glm-api-key
+QWEN_API_KEY=sk-your-qwen-api-key
 SMTP_SERVER=smtp.qq.com
 SMTP_PORT=587
 SMTP_USERNAME=your_qq@qq.com
@@ -33,6 +42,9 @@ EMAIL_TO=recipient@email.com
 
 **Secrets 配置说明：**
 - `DEEPSEEK_API_KEY`: 从 [DeepSeek 官网](https://platform.deepseek.com/) 获取的 API 密钥
+- `OPENAI_API_KEY`: 从 [OpenAI 官网](https://platform.openai.com/) 获取的 API 密钥
+- `GLM_API_KEY`: 从 [智谱AI](https://open.bigmodel.cn/) 获取的 API 密钥
+- `QWEN_API_KEY`: 从 [通义千问](https://dashscope.aliyun.com/) 获取的 API 密钥
 - `SMTP_SERVER`: 邮件服务器地址
 - `SMTP_PORT`: SMTP 端口（QQ邮箱建议使用587）
 - `SMTP_USERNAME`: 发送邮件的邮箱账号
@@ -48,6 +60,8 @@ EMAIL_TO=recipient@email.com
 ARXIV_CATEGORIES=math.AP
 MAX_PAPERS=40
 SEARCH_DAYS=7
+AI_PROVIDER=deepseek
+AI_MODEL=deepseek-chat
 PRIORITY_TOPICS=Navier-Stokes方程|Euler方程|湍流|涡度
 SECONDARY_TOPICS=色散偏微分方程|调和分析|极大算子
 PRIORITY_ANALYSIS_DELAY=3
@@ -59,6 +73,8 @@ EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
 - `ARXIV_CATEGORIES`: ArXiv 论文类别，用逗号分隔（如：`math.AP,math.NA`）
 - `MAX_PAPERS`: 每次获取的最大论文数量
 - `SEARCH_DAYS`: 搜索最近几天的论文
+- `AI_PROVIDER`: AI提供商选择，支持 `deepseek`, `openai`, `glm`
+- `AI_MODEL`: AI模型名称（如：`deepseek-chat`, `gpt-4`, `glm-4`）
 - `PRIORITY_TOPICS`: 重点关注主题，用 `|` 分隔，与之相关的论文会进行完整分析
 - `SECONDARY_TOPICS`: 了解领域主题，用 `|` 分隔，与之相关的论文只翻译摘要
 - `PRIORITY_ANALYSIS_DELAY`: 重点论文分析间隔时间（秒）
@@ -68,6 +84,44 @@ EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
 4. 安装依赖（本地测试时需要）：
 ```bash
 pip install -r requirements.txt
+```
+
+## AI模型配置
+
+系统支持多种AI模型提供商，您可以通过环境变量选择：
+
+### 支持的AI提供商
+
+| 提供商 | 环境变量 | 默认模型 | 获取API密钥 |
+|--------|----------|----------|-------------|
+| DeepSeek | `AI_PROVIDER=deepseek` | `deepseek-chat` | [DeepSeek官网](https://platform.deepseek.com/) |
+| OpenAI | `AI_PROVIDER=openai` | `gpt-4` | [OpenAI官网](https://platform.openai.com/) |
+| 智谱AI | `AI_PROVIDER=glm` | `glm-4` | [智谱AI](https://open.bigmodel.cn/) |
+| 通义千问 | `AI_PROVIDER=qwen` | `qwen-turbo` | [通义千问](https://dashscope.aliyun.com/) |
+
+### 配置示例
+
+```bash
+# 使用DeepSeek（默认）
+AI_PROVIDER=deepseek
+AI_MODEL=deepseek-chat
+
+# 使用OpenAI GPT-4
+AI_PROVIDER=openai
+AI_MODEL=gpt-4
+
+# 使用智谱AI
+AI_PROVIDER=glm
+AI_MODEL=glm-4
+
+# 使用通义千问
+AI_PROVIDER=qwen
+AI_MODEL=qwen-turbo
+```
+
+# 使用智谱AI
+AI_PROVIDER=glm
+AI_MODEL=glm-4
 ```
 
 ## 使用方法

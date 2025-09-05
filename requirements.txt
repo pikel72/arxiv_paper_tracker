@@ -2,4 +2,5 @@ arxiv==2.2.0
 openai==0.28
 requests==2.32.0
 python-dotenv==1.0.0
-jinja2==3.1.2 
+jinja2==3.1.2
+pdfplumber==0.11.0 
