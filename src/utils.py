@@ -18,6 +18,9 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
     filename = f"arxiv_analysis_{date_str}_{time_str}.md"
     conclusion_file = RESULTS_DIR / filename
     
+    # 确保结果目录存在
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    
     # 写入分析结果到新文件
     with open(conclusion_file, 'w', encoding='utf-8') as f:
         f.write(f"# ArXiv论文分析报告\n\n")
