@@ -60,8 +60,7 @@ jobs:
         # 邮件配置
         EMAIL_SUBJECT_PREFIX: ${{ vars.EMAIL_SUBJECT_PREFIX || 'ArXiv论文分析报告' }}
       run: |
-        cd src
-        python main.py
+        python src/main.py
     
     - name: Upload analysis results
       uses: actions/upload-artifact@v4  # 升级到 v4
