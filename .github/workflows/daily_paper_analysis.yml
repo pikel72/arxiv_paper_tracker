@@ -41,6 +41,13 @@ jobs:
       env:
         # API和邮件配置 (敏感信息)
         DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+        QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+        # AI模型选择配置
+        AI_PROVIDER: ${{ vars.AI_PROVIDER || 'qwen' }}
+        AI_MODEL: ${{ vars.AI_MODEL || 'qwen-plus' }}
+        # QQ邮箱服务器配置
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
         SMTP_PORT: ${{ secrets.SMTP_PORT }}
         SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}

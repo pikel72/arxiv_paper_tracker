@@ -14,8 +14,8 @@ GLM_API_KEY = os.getenv("GLM_API_KEY")
 QWEN_API_KEY = os.getenv("QWEN_API_KEY")
 
 # AI模型配置
-AI_PROVIDER = os.getenv("AI_PROVIDER", "deepseek")  # 支持: deepseek, openai, glm
-AI_MODEL = os.getenv("AI_MODEL", "deepseek-chat")  # 模型名称
+AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")  # 支持: deepseek, openai, glm
+AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")  # 模型名称
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
@@ -66,32 +66,32 @@ EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX", "ArXiv论文分析报�
 class AIClient:
     """通用AI客户端，支持多个AI提供商"""
     
-    def __init__(self, provider="deepseek", model="deepseek-chat"):
-        self.provider = provider
-        self.model = model
+    def __init__(self, provider=None, model=None):
+        self.provider = provider or AI_PROVIDER
+        self.model = model or AI_MODEL
         
-        if provider == "deepseek":
+        if self.provider == "deepseek":
             import openai
             openai.api_key = DEEPSEEK_API_KEY
             openai.api_base = "https://api.deepseek.com/v1"
             self.client = openai
-        elif provider == "openai":
+        elif self.provider == "openai":
             import openai
             openai.api_key = OPENAI_API_KEY
             openai.api_base = "https://api.openai.com/v1"
             self.client = openai
-        elif provider == "glm":
+        elif self.provider == "glm":
             import openai
             openai.api_key = GLM_API_KEY
             openai.api_base = "https://open.bigmodel.cn/api/paas/v4/"
             self.client = openai
-        elif provider == "qwen":
+        elif self.provider == "qwen":
             import openai
             openai.api_key = QWEN_API_KEY
             openai.api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
             self.client = openai
         else:
-            raise ValueError(f"不支持的AI提供商: {provider}")
+            raise ValueError(f"不支持的AI提供商: {self.provider}")
     
     def chat_completion(self, messages, **kwargs):
         """统一的聊天完成接口"""

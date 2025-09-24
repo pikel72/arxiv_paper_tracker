@@ -9,7 +9,7 @@ import time
 from config import (
     CATEGORIES, MAX_PAPERS, PAPERS_DIR, RESULTS_DIR,
     PRIORITY_ANALYSIS_DELAY, SECONDARY_ANALYSIS_DELAY,
-    SEARCH_DAYS, PRIORITY_TOPICS, SECONDARY_TOPICS
+    PRIORITY_TOPICS, SECONDARY_TOPICS
 )
 from crawler import get_recent_papers
 from analyzer import check_topic_relevance, analyze_paper_with_deepseek
@@ -27,7 +27,6 @@ def main():
     logger.info(f"配置信息:")
     logger.info(f"- 搜索类别: {', '.join(CATEGORIES)}")
     logger.info(f"- 最大论文数: {MAX_PAPERS}")
-    logger.info(f"- 搜索天数: {SEARCH_DAYS}")
     logger.info(f"- 重点主题数量: {len(PRIORITY_TOPICS)}")
     logger.info(f"- 了解主题数量: {len(SECONDARY_TOPICS)}")
     
