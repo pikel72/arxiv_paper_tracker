@@ -11,14 +11,14 @@ from models import SimplePaper
 logger = logging.getLogger(__name__)
 
 def get_recent_papers(categories, max_results=MAX_PAPERS):
-    """获取最近几天内发布的指定类别的论文"""
+    """获取最近几天内发布或更新的指定类别的论文"""
     # 计算最近几天的日期
     today = datetime.datetime.now()
     days_ago = today - datetime.timedelta(days=SEARCH_DAYS)
     
-    # arXiv API URL
+    # arXiv API URL - 按最后更新日期排序（包括新发布和更新的论文）
     category_query = " OR ".join([f"cat:{cat}" for cat in categories])
-    url = f"https://export.arxiv.org/api/query?search_query={category_query}&sortBy=submittedDate&sortOrder=descending&max_results={max_results}"
+    url = f"https://export.arxiv.org/api/query?search_query={category_query}&sortBy=lastUpdatedDate&sortOrder=descending&max_results={max_results}"
     
     # 发送请求
     response = requests.get(url)
@@ -31,7 +31,7 @@ def get_recent_papers(categories, max_results=MAX_PAPERS):
     
     papers = []
     for entry in feed.entries:
-        # 获取提交日期
+        # 获取发布日期（使用published字段）
         published_date = datetime.datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ")
         
         # 检查是否在最近几天内
