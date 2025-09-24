@@ -12,16 +12,44 @@ logger = logging.getLogger(__name__)
 
 def get_recent_papers(categories, max_results=MAX_PAPERS):
     """获取最近几天内发布或更新的指定类别的论文（基于最后更新日期）"""
-    # 计算最近几天的日期
+    # 计算需要检索的日期范围，精确匹配arXiv的发布周期
     today = datetime.datetime.now()
-    days_ago = today - datetime.timedelta(days=SEARCH_DAYS)
+    weekday = today.weekday()  # 0=周一, 1=周二, ..., 6=周日
+    
+    # arXiv发布规则：
+    # 周一：发布上周五的提交
+    # 周二：发布上周末的提交（周六+周日）
+    # 周三：发布前一天的提交（周二）
+    # 周四：发布前一天的提交（周三）
+    # 周五：发布前一天的提交（周四）
+    
+    if weekday == 0:  # 周一：检索上周五
+        target_date = today - datetime.timedelta(days=3)  # 上周五
+        days_ago = target_date - datetime.timedelta(days=1)  # 前后1天容差
+    elif weekday == 1:  # 周二：检索上周六和周日
+        target_date_start = today - datetime.timedelta(days=3)  # 上周六
+        target_date_end = today - datetime.timedelta(days=2)    # 上周日
+        days_ago = target_date_start - datetime.timedelta(days=1)  # 从上周五开始
+    elif weekday == 2:  # 周三：检索周二
+        target_date = today - datetime.timedelta(days=1)  # 周二
+        days_ago = target_date - datetime.timedelta(days=1)  # 前后1天容差
+    elif weekday == 3:  # 周四：检索周三
+        target_date = today - datetime.timedelta(days=1)  # 周三
+        days_ago = target_date - datetime.timedelta(days=1)  # 前后1天容差
+    elif weekday == 4:  # 周五：检索周四
+        target_date = today - datetime.timedelta(days=1)  # 周四
+        days_ago = target_date - datetime.timedelta(days=1)  # 前后1天容差
+    else:  # 周六、周日：正常检索最近几天
+        days_ago = today - datetime.timedelta(days=SEARCH_DAYS)
+    
+    logger.info(f"今天是周{weekday+1}, 搜索起始日期: {days_ago.strftime('%Y-%m-%d')}")
     
     # arXiv API URL - 按最后更新日期排序（包括新发布和更新的论文）
     category_query = " OR ".join([f"cat:{cat}" for cat in categories])
     url = f"https://export.arxiv.org/api/query?search_query={category_query}&sortBy=lastUpdatedDate&sortOrder=descending&max_results={max_results}"
     
     logger.info(f"API请求URL: {url}")
-    logger.info(f"搜索天数: {SEARCH_DAYS}天, 最大论文数: {max_results}")
+    logger.info(f"最大论文数: {max_results}")
     
     # 发送请求
     response = requests.get(url)

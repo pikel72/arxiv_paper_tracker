@@ -30,7 +30,7 @@ RESULTS_DIR = Path("./results")
 # 从环境变量读取配置，如果没有则使用默认值
 CATEGORIES = [cat.strip() for cat in os.getenv("ARXIV_CATEGORIES", "math.AP").split(",") if cat.strip()]
 MAX_PAPERS = int(os.getenv("MAX_PAPERS", "50"))
-SEARCH_DAYS = int(os.getenv("SEARCH_DAYS", "14"))
+SEARCH_DAYS = int(os.getenv("SEARCH_DAYS", "3"))
 
 # 主题过滤列表从环境变量读取
 default_priority_topics = [

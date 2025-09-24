@@ -2,7 +2,7 @@ name: Daily Paper Analysis
 
 on:
   schedule:
-    - cron: '10 1 * * *'  # 每天北京时间早上9:10运行 (UTC 01:10)
+    - cron: '20 1 * * *'  # 每天北京时间早上9:20运行 (UTC 01:20)
   workflow_dispatch:  # 允许手动触发
 
 jobs:
@@ -50,7 +50,7 @@ jobs:
         # ArXiv搜索配置
         ARXIV_CATEGORIES: ${{ vars.ARXIV_CATEGORIES || 'math.AP' }}
         MAX_PAPERS: ${{ vars.MAX_PAPERS || '50' }}
-        SEARCH_DAYS: ${{ vars.SEARCH_DAYS || '14' }}
+        SEARCH_DAYS: ${{ vars.SEARCH_DAYS || '3' }}
         # 主题过滤配置
         PRIORITY_TOPICS: ${{ vars.PRIORITY_TOPICS || 'Navier-Stokes方程|Euler方程|湍流' }}
         SECONDARY_TOPICS: ${{ vars.SECONDARY_TOPICS || '色散偏微分方程|调和分析|极大算子' }}
