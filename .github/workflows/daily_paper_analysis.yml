@@ -49,8 +49,8 @@ jobs:
         EMAIL_TO: ${{ secrets.EMAIL_TO }}
         # ArXiv搜索配置
         ARXIV_CATEGORIES: ${{ vars.ARXIV_CATEGORIES || 'math.AP' }}
-        MAX_PAPERS: ${{ vars.MAX_PAPERS || '3' }}
-        SEARCH_DAYS: ${{ vars.SEARCH_DAYS || '7' }}
+        MAX_PAPERS: ${{ vars.MAX_PAPERS || '50' }}
+        SEARCH_DAYS: ${{ vars.SEARCH_DAYS || '14' }}
         # 主题过滤配置
         PRIORITY_TOPICS: ${{ vars.PRIORITY_TOPICS || 'Navier-Stokes方程|Euler方程|湍流' }}
         SECONDARY_TOPICS: ${{ vars.SECONDARY_TOPICS || '色散偏微分方程|调和分析|极大算子' }}
