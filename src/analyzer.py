@@ -7,7 +7,7 @@ from config import ai_client, PRIORITY_TOPICS, SECONDARY_TOPICS
 
 logger = logging.getLogger(__name__)
 
-def extract_pdf_text(pdf_path, max_pages=5):
+def extract_pdf_text(pdf_path, max_pages=10):
     """从PDF文件中提取文本内容"""
     try:
         text_content = ""
@@ -90,35 +90,39 @@ def check_topic_relevance(paper):
         # 出错时默认为优先级2，避免遗漏
         return 2, f"检查出错，默认处理: {str(e)}"
 
-def analyze_paper_with_deepseek(pdf_path, paper):
-    """使用DeepSeek API分析论文（使用OpenAI 0.28.0兼容格式）"""
+def analyze_paper(pdf_path, paper):
+    """分析论文内容，支持多种AI分析后端"""
     try:
         # 从Author对象中提取作者名
         author_names = [author.name for author in paper.authors]
-        
-        # 提取PDF文本内容
+
+        # 提取PDF文本内容（默认10页）
         pdf_content = extract_pdf_text(pdf_path)
-        
+
         prompt = f"""
-        论文标题: {paper.title}
-        作者: {', '.join(author_names)}
-        类别: {', '.join(paper.categories)}
-        发布时间: {paper.published}
-        
-        论文摘要: {paper.summary}
-        
-        论文PDF内容（前20页）:
-        {pdf_content}
-        
-        请基于上述论文的摘要和PDF内容进行分析，并提供：
-        1. 研究对象和背景: 给出论文描述的方程或系统, 如果在Introduction的部分给出了方程组的数学公式, 请一并给出 (用行间公式表示); 如果文章研究的是某一种现象的验证, 请描述现象.
-        2. 主要定理或主要结果: 给出文章证明的主要定理.
-        3. 研究方法, 具体采用的技术, 工具
-        4. 与之前工作的比较: 文章是否声称做出了什么突破或改进? 如果有，请描述.
-        
-        请使用中文回答，并以Markdown格式 (包含数学公式), 分自然段格式输出。
-        """
-        
+请在开头单独输出一行：**中文标题**: [请将论文标题翻译成中文，简明准确]
+论文标题: {paper.title}
+作者: {', '.join(author_names)}
+类别: {', '.join(paper.categories)}
+发布时间: {paper.published}
+
+论文摘要: {paper.summary}
+
+论文PDF内容（前10页）:
+{pdf_content}
+
+请基于上述论文的摘要和PDF内容进行分析，并提供：
+1. 研究对象和背景: 给出论文描述的方程或系统, 如果在Introduction的部分给出了方程组的数学公式, 请一并给出 (用行间公式表示); 如果文章研究的是某一种现象的验证, 请描述现象。如果PDE研究的区域, 边值条件或函数空间有特殊之处, 请一并说明。
+2. 主要定理或主要结果: 给出文章证明的主要定理（Theorem X.X 或 Proposition X.X）。请以精确引述（使用 Markdown 引用块 >）的方式复述定理, 包括结论和全部假设条件。
+3. 研究方法、关键技术和核心工具:
+a) 描述证明中使用的核心分析学工具（例如：不动点定理、紧性原理、变分方法、Strichartz 估计、特定类型的能量估计）; b) 描述论文中解决技术性难题（如非线性项或奇异性）时采用的主要技巧。
+4. 与之前工作的比较:
+a) 描述文章声称做出的突破或改进。这种改进主要体现在放宽了先前工作的哪些假设条件（例如：对初始数据正则性要求的降低、维度的推广等）？或者论文获得的结果（如解的正则性、存在性、唯一性或稳定性）比现有结果强在哪里？
+
+【重要】请使用中文回答，并以Markdown格式 (包含数学公式)，分自然段格式输出。
+请严格注意：所有行内公式请用$公式$包裹，$符号内外不要添加任何空格，保证公式能被Markdown正确渲染。
+"""
+
         logger.info(f"正在分析论文: {paper.title}")
         analysis = ai_client.chat_completion(
             messages=[
@@ -126,9 +130,10 @@ def analyze_paper_with_deepseek(pdf_path, paper):
                 {"role": "user", "content": prompt},
             ]
         )
-        
         logger.info(f"论文分析完成: {paper.title}")
         return analysis
     except Exception as e:
         logger.error(f"分析论文失败 {paper.title}: {str(e)}")
+        return f"**论文分析出错**: {str(e)}"
+        return f"**论文分析出错**: {str(e)}"
         return f"**论文分析出错**: {str(e)}"

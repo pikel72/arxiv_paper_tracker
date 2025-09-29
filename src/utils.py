@@ -23,10 +23,10 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
     
     # 写入分析结果到新文件
     with open(conclusion_file, 'w', encoding='utf-8') as f:
-        f.write(f"# ArXiv论文分析报告\n\n")
-        f.write(f"**生成时间**: {today.strftime('%Y年%m月%d日 %H:%M:%S')}\n")
-        f.write(f"**重点关注论文数量**: {len(priority_analyses)}\n")
-        f.write(f"**了解领域论文数量**: {len(secondary_analyses)}\n")
+        f.write(f"# arXiv论文分析报告\n\n")
+        f.write(f"**生成时间**: {today.strftime('%Y年%m月%d日 %H:%M:%S')}\n\n")
+        f.write(f"**重点关注论文数量**: {len(priority_analyses)}\n\n")
+        f.write(f"**了解领域论文数量**: {len(secondary_analyses)}\n\n")
         if irrelevant_papers:
             f.write(f"**不相关论文数量**: {len(irrelevant_papers)}\n")
         f.write("\n")
@@ -37,13 +37,18 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             f.write("# 重点关注论文（完整分析）\n\n")
             for i, (paper, analysis) in enumerate(priority_analyses, 1):
                 author_names = [author.name for author in paper.authors]
-                
-                # 处理过长的标题
+                # 显示英文和中文标题，均为二级标题
                 title = paper.title
-                if len(title) > 80:
-                    title = title[:77] + "..."
-                
                 f.write(f"## {i}. {title}\n\n")
+                chinese_title = ""
+                if analysis and "**中文标题**:" in analysis:
+                    lines = analysis.split('\n')
+                    for line in lines:
+                        if line.startswith("**中文标题**:"):
+                            chinese_title = line.replace("**中文标题**:", "").strip()
+                            break
+                if chinese_title:
+                    f.write(f"## {chinese_title}\n\n")
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
@@ -58,24 +63,18 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             for i, (paper, translation) in enumerate(secondary_analyses, 1):
                 author_names = [author.name for author in paper.authors]
                 
-                # 处理过长的标题
+                # 直接显示英文和中文标题，均为二级标题
                 title = paper.title
-                if len(title) > 80:
-                    title = title[:77] + "..."
-                
                 f.write(f"## {i}. {title}\n\n")
-                
-                # 提取中文标题
+                chinese_title = ""
                 if translation and "**中文标题**:" in translation:
-                    # 解析翻译结果，提取中文标题
                     lines = translation.split('\n')
-                    chinese_title = ""
                     for line in lines:
                         if line.startswith("**中文标题**:"):
                             chinese_title = line.replace("**中文标题**:", "").strip()
                             break
-                    if chinese_title:
-                        f.write(f"**中文标题**: {chinese_title}\n\n")
+                if chinese_title:
+                    f.write(f"## {chinese_title}\n\n")
                 
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
@@ -91,24 +90,18 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             for i, (paper, reason, title_translation) in enumerate(irrelevant_papers, 1):
                 author_names = [author.name for author in paper.authors]
                 
-                # 处理过长的标题
+                # 直接显示英文和中文标题，均为二级标题
                 title = paper.title
-                if len(title) > 80:
-                    title = title[:77] + "..."
-                
                 f.write(f"## {i}. {title}\n\n")
-                
-                # 提取中文标题
+                chinese_title = ""
                 if title_translation and "**中文标题**:" in title_translation:
-                    # 解析翻译结果，提取中文标题
                     lines = title_translation.split('\n')
-                    chinese_title = ""
                     for line in lines:
                         if line.startswith("**中文标题**:"):
                             chinese_title = line.replace("**中文标题**:", "").strip()
                             break
-                    if chinese_title:
-                        f.write(f"**中文标题**: {chinese_title}\n\n")
+                if chinese_title:
+                    f.write(f"## {chinese_title}\n\n")
                 
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")

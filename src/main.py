@@ -12,7 +12,7 @@ from config import (
     PRIORITY_TOPICS, SECONDARY_TOPICS
 )
 from crawler import get_recent_papers
-from analyzer import check_topic_relevance, analyze_paper_with_deepseek
+from analyzer import check_topic_relevance, analyze_paper
 from translator import translate_abstract_with_deepseek
 from emailer import send_email, format_email_content
 from utils import write_to_conclusion, delete_pdf, download_paper
@@ -61,7 +61,7 @@ def main():
             pdf_path = download_paper(paper, PAPERS_DIR)
             if pdf_path:
                 time.sleep(PRIORITY_ANALYSIS_DELAY)  # 使用环境变量配置的延时
-                analysis = analyze_paper_with_deepseek(pdf_path, paper)
+                analysis = analyze_paper(pdf_path, paper)
                 priority_analyses.append((paper, analysis))
                 delete_pdf(pdf_path)
                 

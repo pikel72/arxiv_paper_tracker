@@ -18,7 +18,7 @@ def format_email_content(priority_analyses, secondary_analyses, irrelevant_paper
     """格式化邮件内容，包含三种类型的论文"""
     today = datetime.datetime.now().strftime('%Y-%m-%d')
     
-    content = f"## 今日ArXiv论文分析报告 ({today})\n\n"
+    content = f"## arXiv论文分析报告 ({today})\n\n"
     content += f"**重点关注论文**: {len(priority_analyses)} 篇\n"
     content += f"**了解领域论文**: {len(secondary_analyses)} 篇\n"
     if irrelevant_papers:
