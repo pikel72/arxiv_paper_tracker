@@ -38,7 +38,8 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             for i, (paper, analysis) in enumerate(priority_analyses, 1):
                 author_names = [author.name for author in paper.authors]
                 # 显示英文和中文标题，均为二级标题
-                title = paper.title
+                import re
+                title = re.sub(r"\s+", " ", paper.title).strip()
                 f.write(f"## {i}. {title}\n\n")
                 chinese_title = ""
                 if analysis and "**中文标题**:" in analysis:
@@ -64,7 +65,8 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 author_names = [author.name for author in paper.authors]
                 
                 # 直接显示英文和中文标题，均为二级标题
-                title = paper.title
+                import re
+                title = re.sub(r"\s+", " ", paper.title).strip()
                 f.write(f"## {i}. {title}\n\n")
                 chinese_title = ""
                 if translation and "**中文标题**:" in translation:
@@ -91,7 +93,8 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 author_names = [author.name for author in paper.authors]
                 
                 # 直接显示英文和中文标题，均为二级标题
-                title = paper.title
+                import re
+                title = re.sub(r"\s+", " ", paper.title).strip()
                 f.write(f"## {i}. {title}\n\n")
                 chinese_title = ""
                 if title_translation and "**中文标题**:" in title_translation:
