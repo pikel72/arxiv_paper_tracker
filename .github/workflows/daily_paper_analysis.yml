@@ -90,8 +90,8 @@ jobs:
 
     - name: Copy analysis results to pages_src repo
       run: |
-        mkdir -p content/report/
-        cp -r results/* content/report/
+        mkdir -p pages_src/content/report/
+        cp -r results/* pages_src/content/report/
 
     - name: Commit and push to pages_src
       run: |
