@@ -23,7 +23,13 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
     
     # 写入分析结果到新文件
     with open(conclusion_file, 'w', encoding='utf-8') as f:
-        f.write(f"# arXiv论文分析报告\n\n")
+        f.write(f"---\n")
+        f.write(f"title: \"{today.strftime('%Y年%m月%d日')}论文分析\"\n")
+        f.write(f"date: {today.strftime('%Y-%m-%d')}\n")
+        f.write(f"description: 共有 {len(priority_analyses)} 篇重点关注论文, {len(secondary_analyses)} 篇论文可以了解")
+        if irrelevant_papers:
+            f.write(f", {len(irrelevant_papers)} 篇不相关论文")
+        f.write(f"---\n")
         f.write(f"**生成时间**: {today.strftime('%Y年%m月%d日 %H:%M:%S')}\n\n")
         f.write(f"**重点关注论文数量**: {len(priority_analyses)}\n\n")
         f.write(f"**了解领域论文数量**: {len(secondary_analyses)}\n\n")
@@ -53,7 +59,7 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
-                f.write(f"**ArXiv ID**: {paper.get_short_id()}\n\n")
+                f.write(f"**arXiv ID**: {paper.get_short_id()}\n\n")
                 f.write(f"**链接**: {paper.entry_id}\n\n")
                 f.write(f"### 详细分析\n\n{analysis}\n\n")
                 f.write("---\n\n")
@@ -81,7 +87,7 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
-                f.write(f"**ArXiv ID**: {paper.get_short_id()}\n\n")
+                f.write(f"**arXiv ID**: {paper.get_short_id()}\n\n")
                 f.write(f"**链接**: {paper.entry_id}\n\n")
                 f.write(f"### 摘要翻译\n\n{translation}\n\n")
                 f.write("---\n\n")
@@ -109,7 +115,7 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
-                f.write(f"**ArXiv ID**: {paper.get_short_id()}\n\n")
+                f.write(f"**arXiv ID**: {paper.get_short_id()}\n\n")
                 f.write(f"**链接**: {paper.entry_id}\n\n")
                 f.write(f"**摘要**: {paper.summary}\n\n")
                 f.write("---\n\n")
