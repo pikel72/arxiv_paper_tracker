@@ -29,14 +29,13 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
         f.write(f"description: 共有 {len(priority_analyses)} 篇重点关注论文, {len(secondary_analyses)} 篇论文可以了解")
         if irrelevant_papers:
             f.write(f", {len(irrelevant_papers)} 篇不相关论文")
-        f.write(f"---\n")
+        f.write(f"\n---\n\n")
         f.write(f"**生成时间**: {today.strftime('%Y年%m月%d日 %H:%M:%S')}\n\n")
         f.write(f"**重点关注论文数量**: {len(priority_analyses)}\n\n")
         f.write(f"**了解领域论文数量**: {len(secondary_analyses)}\n\n")
         if irrelevant_papers:
             f.write(f"**不相关论文数量**: {len(irrelevant_papers)}\n")
         f.write("\n")
-        f.write("---\n\n")
         
         # 写入重点关注的论文（完整分析）
         if priority_analyses:
