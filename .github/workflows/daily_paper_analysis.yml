@@ -91,7 +91,8 @@ jobs:
     - name: Copy analysis results to pages_src repo
       run: |
         mkdir -p pages_src/content/report/
-        cp -r results/* pages_src/content/report/
+        latest_file=$(ls -t results/*.md | head -n 1)
+        cp "$latest_file" pages_src/content/report/
 
     - name: Commit and push to pages_src
       run: |
