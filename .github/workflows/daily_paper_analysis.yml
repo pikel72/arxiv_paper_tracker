@@ -82,6 +82,7 @@ jobs:
         rm -rf papers/*.pdf
 
     - name: Push results to pages_src repo
+      if: github.repository == 'pikel72/arxiv_paper_tracker'
       uses: actions/checkout@v3
       with:
         repository: pikel72/pages_src
@@ -89,12 +90,14 @@ jobs:
         path: pages_src
 
     - name: Copy analysis results to pages_src repo
+      if: github.repository == 'pikel72/arxiv_paper_tracker'
       run: |
         mkdir -p pages_src/content/report/
         latest_file=$(ls -t results/*.md | head -n 1)
         cp "$latest_file" pages_src/content/report/
 
     - name: Commit and push to pages_src
+      if: github.repository == 'pikel72/arxiv_paper_tracker'
       run: |
         cd pages_src
         git config user.name "github-actions[bot]"

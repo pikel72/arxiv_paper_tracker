@@ -1,3 +1,41 @@
+def write_single_analysis(paper, analysis, filename: str = None):
+    """将单论文分析结果写入 Markdown 文件，结构更简洁。"""
+    import re
+    today = datetime.datetime.now()
+    date_str = today.strftime('%Y-%m-%d')
+    time_str = today.strftime('%H-%M-%S')
+    if filename:
+        md_file = RESULTS_DIR / filename
+    else:
+        md_file = RESULTS_DIR / f"arxiv_{paper.get_short_id().replace('/', '_')}_{date_str}_{time_str}.md"
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    author_names = [author.name for author in paper.authors]
+    title = re.sub(r"\s+", " ", paper.title).strip()
+    chinese_title = ""
+    if analysis and "**中文标题**:" in analysis:
+        lines = analysis.split('\n')
+        for line in lines:
+            if line.startswith("**中文标题**:"):
+                chinese_title = line.replace("**中文标题**:", "").strip()
+                break
+    with open(md_file, 'w', encoding='utf-8') as f:
+        f.write(f"---\n")
+        f.write(f"title: \"{chinese_title if chinese_title else title}\"\n")
+        f.write(f"date: {today.strftime('%Y-%m-%d')}\n")
+        f.write(f"description: {', '.join(author_names)}\n")
+        f.write(f"arxiv_id: {paper.get_short_id()}\n")
+        f.write(f"---\n")
+        f.write(f"# {title}\n")
+        if chinese_title:
+            f.write(f"# {chinese_title}\n")
+        f.write(f"**作者**: {', '.join(author_names)}\n\n")
+        f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
+        f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
+        f.write(f"**arXiv ID**: {paper.get_short_id()}\n\n")
+        f.write(f"**链接**: {paper.entry_id}\n\n")
+        f.write(f"## 详细分析\n\n{analysis}\n\n")
+    logger.info(f"单论文分析结果已写入 {md_file.absolute()}")
+    return md_file
 # utils.py - 工具函数模块
 
 import datetime
@@ -8,15 +46,18 @@ from config import RESULTS_DIR
 
 logger = logging.getLogger(__name__)
 
-def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers=None):
-    """将分析结果写入带时间戳的.md文件"""
+def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers=None, filename: str = None):
+    """将分析结果写入带时间戳的.md文件。可选参数 filename 指定自定义文件名（含后缀）。"""
     today = datetime.datetime.now()
     date_str = today.strftime('%Y-%m-%d')
     time_str = today.strftime('%H-%M-%S')
-    
-    # 创建带时间戳的文件名
-    filename = f"arxiv_analysis_{date_str}_{time_str}.md"
-    conclusion_file = RESULTS_DIR / filename
+
+    # 创建文件名：如果传入 filename 则使用它，否则使用带时间戳的默认名
+    if filename:
+        conclusion_file = RESULTS_DIR / filename
+    else:
+        filename = f"arxiv_analysis_{date_str}_{time_str}.md"
+        conclusion_file = RESULTS_DIR / filename
     
     # 确保结果目录存在
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)

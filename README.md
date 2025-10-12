@@ -14,8 +14,6 @@
 ## 安装与配置
 
 1. Fork 或克隆仓库：
-```bash
-git clone https://github.com/你的用户名/arxiv_paper_tracker.git
 cd arxiv_paper_tracker
 ```
 
@@ -26,6 +24,40 @@ cp .env.example .env
 ```
 
 3. 在 GitHub 仓库中，进入 **Settings → Secrets and variables → Actions**，点击 **Secrets** 标签页，添加以下敏感信息：
+### 单论文分析（本地命令行）
+
+支持直接分析指定 arXiv 论文，适合单篇精读或补充分析。
+
+**命令格式：**
+
+```bash
+python src/main.py --single <arxiv_id> [-p <页数或all>]
+```
+
+参数说明：
+- `--single <arxiv_id>`：指定要分析的 arXiv 论文编号（如 `2305.09582`）。
+- `-p <页数>` 或 `--pages <页数>`：最大 PDF 提取页数，默认为 10。可用数字（如 20），或 `all` 表示全部页。
+
+**示例：**
+
+只分析前 10 页：
+```bash
+python src/main.py --single 2305.09582
+```
+
+分析前 20 页：
+```bash
+python src/main.py --single 2305.09582 -p 20
+```
+
+分析全部页：
+```bash
+python src/main.py --single 2305.09582 -p all
+```
+
+**输出说明：**
+- 结果 Markdown 文件保存在 `results/` 目录，文件名如 `arxiv_2305.09582_2025-10-12_22-56-45.md`
+- 文件内容仅包含该论文的详细分析和基本信息，YAML 头部 description 字段为作者姓名
 
 ```
 DEEPSEEK_API_KEY=sk-your-deepseek-api-key
@@ -117,7 +149,7 @@ AI_MODEL=glm-4
 # 使用通义千问
 AI_PROVIDER=qwen
 AI_MODEL=qwen-turbo
-```
+
 
 # 使用智谱AI
 AI_PROVIDER=glm

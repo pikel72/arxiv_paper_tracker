@@ -99,8 +99,8 @@ def analyze_paper(pdf_path, paper):
         # 提取PDF文本内容（默认10页）
         pdf_content = extract_pdf_text(pdf_path)
 
-        prompt = f"""
-【重要】请使用中文回答，并以Markdown格式 (包含数学公式)，分自然段格式输出。请严格注意：所有行内公式请用 $...$ 包裹, 行间公式使用 $$...$$, 并在公式前后空一行. 保证公式能被Markdown正确渲染。
+        prompt = fr"""
+【重要】请使用中文回答，并以Markdown格式 (包含数学公式)，分自然段格式输出。请严格注意：所有行内公式请用 $...$ 包裹, 注意公式$...$内部前后不要有空格, 以免影响渲染, 行间公式使用 $$...$$, 并在公式前后空一行. 保证公式能被Markdown正确渲染。
 请在开头单独输出一行：**中文标题**: [请将论文标题翻译成中文，简明准确]
 
 论文标题: {paper.title}
@@ -123,7 +123,7 @@ a) 描述文章声称做出的突破或改进。这种改进主要体现在放�
 
 重要: 再次提醒, 由于内容需要符合mathjax的渲染要求, 请严格注意：所有行内公式请用单美元符号 $...$; 同样, 不要使用 \[...\] 包裹行间公式, 请使用 $$...$$ 包裹行间公式, 并在公式前后空一行.
 
-"""
+        """
 
         logger.info(f"正在分析论文: {paper.title}")
         analysis = ai_client.chat_completion(
@@ -136,6 +136,4 @@ a) 描述文章声称做出的突破或改进。这种改进主要体现在放�
         return analysis
     except Exception as e:
         logger.error(f"分析论文失败 {paper.title}: {str(e)}")
-        return f"**论文分析出错**: {str(e)}"
-        return f"**论文分析出错**: {str(e)}"
         return f"**论文分析出错**: {str(e)}"

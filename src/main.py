@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # ArXiv论文追踪与分析器 - 主程序
 
+import argparse
 import datetime
 import logging
 import sys
@@ -12,10 +13,13 @@ from config import (
     PRIORITY_TOPICS, SECONDARY_TOPICS
 )
 from crawler import get_recent_papers
-from analyzer import check_topic_relevance, analyze_paper
+from analyzer import check_topic_relevance, analyze_paper, extract_pdf_text
 from translator import translate_abstract_with_deepseek
 from emailer import send_email, format_email_content
 from utils import write_to_conclusion, delete_pdf, download_paper
+
+import requests
+from models import SimplePaper
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
@@ -23,6 +27,23 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def main():
+    parser = argparse.ArgumentParser(description="ArXiv 论文追踪与分析器")
+    parser.add_argument('--single', type=str, help='单论文分析模式，输入 arXiv ID，例如 2401.12345')
+    parser.add_argument('-p', '--pages', type=str, default='10', help='最大PDF提取页数，数字或 all（全部页）')
+    args = parser.parse_args()
+
+    if args.single:
+        # 解析 pages 参数
+        if args.pages.lower() == 'all':
+            max_pages = None
+        else:
+            try:
+                max_pages = int(args.pages)
+            except Exception:
+                max_pages = 10
+        analyze_single_paper(args.single, max_pages=max_pages)
+        return
+
     logger.info("开始arXiv论文跟踪")
     logger.info(f"配置信息:")
     logger.info(f"- 搜索类别: {', '.join(CATEGORIES)}")
@@ -104,6 +125,77 @@ def main():
     
     logger.info("ArXiv论文追踪和分析完成")
     logger.info(f"结果已保存至 {result_file.absolute()}")
+
+
+def fetch_paper_by_id(arxiv_id):
+    """通过 arXiv API 获取单篇论文条目并返回 SimplePaper 对象或 None"""
+    import feedparser
+    url = f"https://export.arxiv.org/api/query?id_list={arxiv_id}"
+    backoff = 1
+    for attempt in range(1, 4):
+        try:
+            resp = requests.get(url, timeout=30)
+            if resp.status_code == 200:
+                feed = feedparser.parse(resp.content)
+                if not feed.entries:
+                    logger.warning(f"未找到 arXiv ID: {arxiv_id}")
+                    return None
+                entry = feed.entries[0]
+                return SimplePaper(entry)
+            else:
+                logger.warning(f"尝试 {attempt}: arXiv 返回状态 {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"尝试 {attempt}: 请求 arXiv 出错: {str(e)}")
+
+        time.sleep(backoff)
+        backoff *= 2
+
+    logger.error(f"从 arXiv 获取元数据失败（重试3次）: {arxiv_id}")
+    return None
+
+
+def analyze_single_paper(arxiv_id, max_pages=10):
+    """本地单论文分析流程：获取元数据、下载PDF、提取文本、调用AI分析并写入结果。max_pages=None 表示全部页。"""
+    logger.info(f"开始单论文分析: {arxiv_id}")
+
+    paper = fetch_paper_by_id(arxiv_id)
+    if not paper:
+        logger.error(f"未能获取到 arXiv 论文: {arxiv_id}")
+        return
+
+    # 下载 PDF
+    pdf_path = download_paper(paper, PAPERS_DIR)
+    if not pdf_path:
+        logger.error("PDF 下载失败，终止分析")
+        return
+
+    # 计算实际提取页数
+    if max_pages is None:
+        import pdfplumber
+        with pdfplumber.open(pdf_path) as pdf:
+            max_pages_actual = len(pdf.pages)
+    else:
+        max_pages_actual = max_pages
+
+    # 提取 PDF 文本
+    try:
+        pdf_text = extract_pdf_text(pdf_path, max_pages=max_pages_actual)
+    except Exception:
+        pdf_text = None
+
+    # 调用分析函数（复用 analyzer.analyze_paper）
+    analysis = analyze_paper(pdf_path, paper)
+
+    # 用单论文专用输出函数生成 Markdown 文件
+    safe_id = arxiv_id.replace('/', '_')
+    now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    custom_filename = f"arxiv_{safe_id}_{now}.md"
+    from utils import write_single_analysis
+    result_file = write_single_analysis(paper, analysis, filename=custom_filename)
+    logger.info(f"单论文分析完成，结果保存至: {result_file}")
+
+    # 可选择删除 PDF
+    delete_pdf(pdf_path)
 
 if __name__ == "__main__":
     main()
