@@ -18,28 +18,24 @@ def get_recent_papers(categories, max_results=MAX_PAPERS):
     
     # arXiv发布规则：
     # 周一：发布上周五的提交
-    # 周二：发布上周末的提交（周六+周日）
+    # 周二：发布上周六、周日和周一的提交
     # 周三：发布前一天的提交（周二）
     # 周四：发布前一天的提交（周三）
-    # 周五：发布前一天的提交（周四）
+    # 周五和周六：不进行检索
+    # 周日：正常检索最近几天
     
     if weekday == 0:  # 周一：检索上周五
-        target_date = today - datetime.timedelta(days=3)  # 上周五
-        days_ago = target_date - datetime.timedelta(days=1)  # 前后1天容差
-    elif weekday == 1:  # 周二：检索上周六和周日
-        target_date_start = today - datetime.timedelta(days=3)  # 上周六
-        target_date_end = today - datetime.timedelta(days=2)    # 上周日
-        days_ago = target_date_start - datetime.timedelta(days=1)  # 从上周五开始
+        days_ago = today - datetime.timedelta(days=3)  # 上周五
+    elif weekday == 1:  # 周二：检索上周六、周日和周一
+        days_ago = today - datetime.timedelta(days=3)  # 上周六开始
     elif weekday == 2:  # 周三：检索周二
-        target_date = today - datetime.timedelta(days=1)  # 周二
-        days_ago = target_date - datetime.timedelta(days=1)  # 前后1天容差
+        days_ago = today - datetime.timedelta(days=1)  # 周二
     elif weekday == 3:  # 周四：检索周三
-        target_date = today - datetime.timedelta(days=1)  # 周三
-        days_ago = target_date - datetime.timedelta(days=1)  # 前后1天容差
-    elif weekday == 4:  # 周五：检索周四
-        target_date = today - datetime.timedelta(days=1)  # 周四
-        days_ago = target_date - datetime.timedelta(days=1)  # 前后1天容差
-    else:  # 周六、周日：正常检索最近几天
+        days_ago = today - datetime.timedelta(days=1)  # 周三
+    elif weekday == 4 or weekday == 5:  # 周五和周六：跳过检索
+        logger.info(f"今天是周{weekday+1}，跳过论文检索")
+        return []
+    else:  # 周日：正常检索最近几天
         days_ago = today - datetime.timedelta(days=SEARCH_DAYS)
     
     logger.info(f"今天是周{weekday+1}, 搜索起始日期: {days_ago.strftime('%Y-%m-%d')}")
