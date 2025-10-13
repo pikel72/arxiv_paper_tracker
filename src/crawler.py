@@ -32,10 +32,12 @@ def get_recent_papers(categories, max_results=MAX_PAPERS):
         days_ago = today - datetime.timedelta(days=1)  # 周二
     elif weekday == 3:  # 周四：检索周三
         days_ago = today - datetime.timedelta(days=1)  # 周三
-    elif weekday == 4 or weekday == 5:  # 周五和周六：跳过检索
+    elif weekday == 4:  # 周五：检索周四
+        days_ago = today - datetime.timedelta(days=1)  # 周四
+    elif weekday == 5 or weekday == 6:  # 周六、周日：跳过检索
         logger.info(f"今天是周{weekday+1}，跳过论文检索")
         return []
-    else:  # 周日：正常检索最近几天
+    else:  # 兜底
         days_ago = today - datetime.timedelta(days=SEARCH_DAYS)
     
     logger.info(f"今天是周{weekday+1}, 搜索起始日期: {days_ago.strftime('%Y-%m-%d')}")
