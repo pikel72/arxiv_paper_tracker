@@ -12,9 +12,14 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GLM_API_KEY = os.getenv("GLM_API_KEY")
 QWEN_API_KEY = os.getenv("QWEN_API_KEY")
-
+DOUBAO_API_KEY = os.getenv("DOUBAO_API_KEY")
+DOUBAO_API_BASE = os.getenv("DOUBAO_API_BASE")
+KIMI_API_KEY = os.getenv("KIMI_API_KEY")
+KIMI_API_BASE = os.getenv("KIMI_API_BASE")
+CUSTOM_API_BASE = os.getenv("CUSTOM_API_BASE")
+CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
 # AI模型配置
-AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")  # 支持: deepseek, openai, glm
+AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")  # 支持: deepseek, openai, glm, custom
 AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")  # 模型名称
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -89,6 +94,21 @@ class AIClient:
             import openai
             openai.api_key = QWEN_API_KEY
             openai.api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            self.client = openai
+        elif self.provider == "doubao":
+            import openai
+            openai.api_key = DOUBAO_API_KEY
+            openai.api_base = DOUBAO_API_BASE or "https://openapi.doubao.com/v1"
+            self.client = openai
+        elif self.provider == "kimi":
+            import openai
+            openai.api_key = KIMI_API_KEY
+            openai.api_base = KIMI_API_BASE or "https://api.kimi.com/v1"
+            self.client = openai
+        elif self.provider == "custom":
+            import openai
+            openai.api_key = CUSTOM_API_KEY
+            openai.api_base = CUSTOM_API_BASE
             self.client = openai
         else:
             raise ValueError(f"不支持的AI提供商: {self.provider}")

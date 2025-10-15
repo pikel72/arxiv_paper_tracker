@@ -96,6 +96,9 @@ pip install -r requirements.txt
 | OpenAI | `AI_PROVIDER=openai` | `gpt-4` | [OpenAI官网](https://platform.openai.com/) |
 | 智谱AI | `AI_PROVIDER=glm` | `glm-4` | [智谱AI](https://open.bigmodel.cn/) |
 | 通义千问 | `AI_PROVIDER=qwen` | `qwen-turbo` | [通义千问](https://dashscope.aliyun.com/) |
+| 豆包 | `AI_PROVIDER=doubao` | `doubao-chat` | [豆包官网](https://www.doubao.com/) |
+| Kimi | `AI_PROVIDER=kimi` | `kimi-gpt` | [Kimi官网](https://kimi.moonshot.cn/) |
+| 自定义 | `AI_PROVIDER=custom` | 自定义 | 需配置 CUSTOM_API_BASE/CUSTOM_API_KEY |
 
 ### 配置示例
 
@@ -115,6 +118,21 @@ AI_MODEL=glm-4
 # 使用通义千问
 AI_PROVIDER=qwen
 AI_MODEL=qwen-turbo
+
+# 使用豆包
+AI_PROVIDER=doubao
+DOUBAO_API_KEY=your-doubao-api-key
+# DOUBAO_API_BASE 可选，默认 https://openapi.doubao.com/v1
+
+# 使用Kimi
+AI_PROVIDER=kimi
+KIMI_API_KEY=your-kimi-api-key
+# KIMI_API_BASE 可选，默认 https://api.kimi.com/v1
+
+# 使用自定义大模型API
+AI_PROVIDER=custom
+CUSTOM_API_KEY=your-custom-api-key
+CUSTOM_API_BASE=https://your-custom-api.com/v1
 
 
 # 使用智谱AI
