@@ -98,12 +98,12 @@ class AIClient:
         elif self.provider == "doubao":
             import openai
             openai.api_key = DOUBAO_API_KEY
-            openai.api_base = DOUBAO_API_BASE or "https://openapi.doubao.com/v1"
+            openai.api_base = DOUBAO_API_BASE or "https://ark.cn-beijing.volces.com/api/v3"
             self.client = openai
         elif self.provider == "kimi":
             import openai
             openai.api_key = KIMI_API_KEY
-            openai.api_base = KIMI_API_BASE or "https://api.kimi.com/v1"
+            openai.api_base = KIMI_API_BASE or "https://api.moonshot.cn/v1"
             self.client = openai
         elif self.provider == "custom":
             import openai

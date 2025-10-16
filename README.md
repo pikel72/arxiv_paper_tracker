@@ -43,6 +43,7 @@ EMAIL_TO=recipient@email.com
 - `OPENAI_API_KEY`: 从 [OpenAI 官网](https://platform.openai.com/) 获取的 API 密钥
 - `GLM_API_KEY`: 从 [智谱AI](https://open.bigmodel.cn/) 获取的 API 密钥
 - `QWEN_API_KEY`: 从 [通义千问](https://dashscope.aliyun.com/) 获取的 API 密钥
+- 下文提到的其他大模型提供商的密钥
 - `SMTP_SERVER`: 邮件服务器地址
 - `SMTP_PORT`: SMTP 端口（QQ邮箱建议使用587）
 - `SMTP_USERNAME`: 发送邮件的邮箱账号
@@ -122,22 +123,19 @@ AI_MODEL=qwen-turbo
 # 使用豆包
 AI_PROVIDER=doubao
 DOUBAO_API_KEY=your-doubao-api-key
-# DOUBAO_API_BASE 可选，默认 https://openapi.doubao.com/v1
 
 # 使用Kimi
 AI_PROVIDER=kimi
 KIMI_API_KEY=your-kimi-api-key
-# KIMI_API_BASE 可选，默认 https://api.kimi.com/v1
+
+# 使用智谱AI
+AI_PROVIDER=glm
+AI_MODEL=glm-4
 
 # 使用自定义大模型API
 AI_PROVIDER=custom
 CUSTOM_API_KEY=your-custom-api-key
 CUSTOM_API_BASE=https://your-custom-api.com/v1
-
-
-# 使用智谱AI
-AI_PROVIDER=glm
-AI_MODEL=glm-4
 ```
 
 ## 使用方法

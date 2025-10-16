@@ -18,11 +18,14 @@ def write_single_analysis(paper, analysis, filename: str = None):
             if line.startswith("**中文标题**:"):
                 chinese_title = line.replace("**中文标题**:", "").strip()
                 break
+    datetime_str = today.strftime('%Y-%m-%d %H:%M:%S')
+    from config import AI_MODEL
     with open(md_file, 'w', encoding='utf-8') as f:
         f.write(f"---\n")
         f.write(f"title: \"{chinese_title if chinese_title else title}\"\n")
-        f.write(f"date: {today.strftime('%Y-%m-%d')}\n")
+        f.write(f"date: {datetime_str}\n")
         f.write(f"description: {', '.join(author_names)}\n")
+        f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"arxiv_id: {paper.get_short_id()}\n")
         f.write(f"---\n")
         f.write(f"# {title}\n")
@@ -51,6 +54,8 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
     today = datetime.datetime.now()
     date_str = today.strftime('%Y-%m-%d')
     time_str = today.strftime('%H-%M-%S')
+    datetime_str = today.strftime('%Y-%m-%d %H:%M:%S')
+    from config import AI_MODEL
 
     # 创建文件名：如果传入 filename 则使用它，否则使用带时间戳的默认名
     if filename:
@@ -66,11 +71,11 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
     with open(conclusion_file, 'w', encoding='utf-8') as f:
         f.write(f"---\n")
         f.write(f"title: \"{today.strftime('%Y年%m月%d日')}论文分析\"\n")
-        f.write(f"date: {today.strftime('%Y-%m-%d')}\n")
+        f.write(f"date: {datetime_str}\n")
         f.write(f"description: 共有 {len(priority_analyses)} 篇重点关注论文, {len(secondary_analyses)} 篇论文可以了解")
         if irrelevant_papers:
             f.write(f", {len(irrelevant_papers)} 篇不相关论文")
-        f.write(f"\n---\n\n")
+        f.write(f"\nai_model: {AI_MODEL}\n---\n\n")
         f.write(f"**生成时间**: {today.strftime('%Y年%m月%d日 %H:%M:%S')}\n\n")
         f.write(f"**重点关注论文数量**: {len(priority_analyses)}\n\n")
         f.write(f"**了解领域论文数量**: {len(secondary_analyses)}\n\n")
