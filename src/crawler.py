@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def get_recent_papers(categories, max_results=MAX_PAPERS):
     """获取最近几天内发布或更新的指定类别的论文（基于最后更新日期）"""
     # 计算需要检索的日期范围，精确到前一天18:00到当天18:00，保留原有按星期逻辑
-    today = datetime.datetime.utcnow()
+    today = datetime.datetime.now(datetime.timezone.utc)
     weekday = today.weekday()  # 0=周一, 1=周二, ..., 6=周日
 
     # 按星期逻辑确定检索区间
@@ -61,7 +61,7 @@ def get_recent_papers(categories, max_results=MAX_PAPERS):
     papers = []
     for entry in feed.entries:
         # 获取最后更新日期（使用updated字段）
-        updated_date = datetime.datetime.strptime(entry.updated, "%Y-%m-%dT%H:%M:%SZ")
+        updated_date = datetime.datetime.strptime(entry.updated, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
 
         # 检查是否在指定区间内
         if start_time <= updated_date < end_time:
