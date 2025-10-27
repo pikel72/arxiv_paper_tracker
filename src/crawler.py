@@ -43,7 +43,10 @@ def get_recent_papers(categories, max_results=MAX_PAPERS):
     
     # arXiv API URL - 按最后更新日期排序（包括新发布和更新的论文）
     category_query = " OR ".join([f"cat:{cat}" for cat in categories])
-    url = f"https://export.arxiv.org/api/query?search_query={category_query}&sortBy=lastUpdatedDate&max_results={max_results}"
+    # 添加时间范围参数，确保返回足够论文
+    start_date = start_time.strftime('%Y-%m-%d')
+    end_date = end_time.strftime('%Y-%m-%d')
+    url = f"https://export.arxiv.org/api/query?search_query={category_query}&sortBy=lastUpdatedDate&updatedDate:[{start_date} TO {end_date}]&max_results={max_results}"
 
     logger.info(f"API请求URL: {url}")
     logger.info(f"最大论文数: {max_results}")
