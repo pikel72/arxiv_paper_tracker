@@ -39,6 +39,10 @@ def get_recent_papers(categories, max_results=MAX_PAPERS):
         start_time = (today - datetime.timedelta(days=SEARCH_DAYS)).replace(hour=18, minute=0, second=0, microsecond=0)
         end_time = today.replace(hour=18, minute=0, second=0, microsecond=0)
 
+    # 根据 SEARCH_DAYS 扩展时间区间宽度（SEARCH_DAYS=1表示基础区间，=2表示向前扩展1天，以此类推）
+    if SEARCH_DAYS > 1:
+        start_time = start_time - datetime.timedelta(days=SEARCH_DAYS - 1)
+
     logger.info(f"今天是周{weekday+1}, 搜索区间: {start_time.strftime('%Y-%m-%d %H:%M')} ~ {end_time.strftime('%Y-%m-%d %H:%M')}")
     
     # arXiv API URL - 按最后更新日期排序（包括新发布和更新的论文）
