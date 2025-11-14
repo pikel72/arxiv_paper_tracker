@@ -48,9 +48,10 @@ def get_recent_papers(categories, max_results=MAX_PAPERS):
     # arXiv API URL - 按最后更新日期排序（包括新发布和更新的论文）
     category_query = " OR ".join([f"cat:{cat}" for cat in categories])
     # 添加时间范围参数，确保返回足够论文
-    start_date = start_time.strftime('%Y-%m-%d')
-    end_date = end_time.strftime('%Y-%m-%d')
-    url = f"https://export.arxiv.org/api/query?search_query={category_query}&sortBy=lastUpdatedDate&updatedDate:[{start_date} TO {end_date}]&max_results={max_results}"
+    start_date = start_time.strftime('%Y%m%d')
+    end_date = end_time.strftime('%Y%m%d')
+        # 使用submittedDate参数，格式为YYYYMMDD
+    url = f"https://export.arxiv.org/api/query?search_query=({category_query}) AND submittedDate:[{start_date} TO {end_date}]&sortBy=lastUpdatedDate&max_results={max_results}"
 
     logger.info(f"API请求URL: {url}")
     logger.info(f"最大论文数: {max_results}")
@@ -67,16 +68,13 @@ def get_recent_papers(categories, max_results=MAX_PAPERS):
     
     papers = []
     for entry in feed.entries:
-        # 获取最后更新日期（使用updated字段）
-        updated_date = datetime.datetime.strptime(entry.updated, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-
-        # 检查是否在指定区间内
-        if start_time <= updated_date < end_time:
+        title = entry.title if hasattr(entry, 'title') else '(无标题)'
+        submit_date = datetime.datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        if start_time <= submit_date < end_time:
+            logger.info(f"通过筛选: {title} | 提交时间: {submit_date}")
             papers.append(SimplePaper(entry))
-        elif updated_date < start_time:
-            # 由于结果是按更新日期降序排列，可以提前停止
-            logger.info(f"停止于更新日期: {updated_date}, 区间起点: {start_time}")
-            break
+        else:
+            logger.info(f"未通过筛选: {title} | 提交时间: {submit_date}")
     
     logger.info(f"找到{len(papers)}篇符合条件的论文")
     return papers
