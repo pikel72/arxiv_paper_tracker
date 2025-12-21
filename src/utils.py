@@ -28,9 +28,9 @@ def write_single_analysis(paper, analysis, filename: str = None):
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"arxiv_id: {paper.get_short_id()}\n")
         f.write(f"---\n")
-        f.write(f"# {title}\n")
+        f.write(f"# {chinese_title if chinese_title else title}\n")
         if chinese_title:
-            f.write(f"# {chinese_title}\n")
+            f.write(f"**{title}**\n\n")
         f.write(f"**作者**: {', '.join(author_names)}\n\n")
         f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
         f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
@@ -88,10 +88,10 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             f.write("# 重点关注论文（完整分析）\n\n")
             for i, (paper, analysis) in enumerate(priority_analyses, 1):
                 author_names = [author.name for author in paper.authors]
-                # 显示英文和中文标题，均为二级标题
+                # 显示中文标题（二级标题），英文标题加粗显示
                 import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
-                f.write(f"## {i}. {title}\n\n")
+                
                 chinese_title = ""
                 if analysis and "**中文标题**:" in analysis:
                     lines = analysis.split('\n')
@@ -99,8 +99,11 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                         if line.startswith("**中文标题**:"):
                             chinese_title = line.replace("**中文标题**:", "").strip()
                             break
+                
+                f.write(f"## {i}. {chinese_title if chinese_title else title}\n\n")
                 if chinese_title:
-                    f.write(f"## {chinese_title}\n\n")
+                    f.write(f"**{title}**\n\n")
+                
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
@@ -115,10 +118,10 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             for i, (paper, translation) in enumerate(secondary_analyses, 1):
                 author_names = [author.name for author in paper.authors]
                 
-                # 直接显示英文和中文标题，均为二级标题
+                # 显示中文标题（二级标题），英文标题加粗显示
                 import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
-                f.write(f"## {i}. {title}\n\n")
+                
                 chinese_title = ""
                 if translation and "**中文标题**:" in translation:
                     lines = translation.split('\n')
@@ -126,8 +129,10 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                         if line.startswith("**中文标题**:"):
                             chinese_title = line.replace("**中文标题**:", "").strip()
                             break
+                
+                f.write(f"## {i}. {chinese_title if chinese_title else title}\n\n")
                 if chinese_title:
-                    f.write(f"## {chinese_title}\n\n")
+                    f.write(f"**{title}**\n\n")
                 
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
@@ -143,10 +148,10 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             for i, (paper, reason, title_translation) in enumerate(irrelevant_papers, 1):
                 author_names = [author.name for author in paper.authors]
                 
-                # 直接显示英文和中文标题，均为二级标题
+                # 显示中文标题（二级标题），英文标题加粗显示
                 import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
-                f.write(f"## {i}. {title}\n\n")
+                
                 chinese_title = ""
                 if title_translation and "**中文标题**:" in title_translation:
                     lines = title_translation.split('\n')
@@ -154,8 +159,10 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                         if line.startswith("**中文标题**:"):
                             chinese_title = line.replace("**中文标题**:", "").strip()
                             break
+                
+                f.write(f"## {i}. {chinese_title if chinese_title else title}\n\n")
                 if chinese_title:
-                    f.write(f"## {chinese_title}\n\n")
+                    f.write(f"**{title}**\n\n")
                 
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")

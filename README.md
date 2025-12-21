@@ -153,6 +153,16 @@ CUSTOM_API_BASE=https://your-custom-api.com/v1
 3. 点击 "Run workflow"
 4. 选择 "Run workflow" 确认运行
 
+### Windows 便捷脚本
+
+双击运行项目根目录下的 `run_tracker.bat` 脚本，进入交互式菜单：
+
+- 选择 1：运行全流程分析（抓取并分析最近论文）
+- 选择 2：单论文分析（输入 arXiv ID 和可选页数）
+- 选择 3：退出
+
+脚本假设您已提前配置好虚拟环境和 `.env` 文件。
+
 ## 配置说明
 
 

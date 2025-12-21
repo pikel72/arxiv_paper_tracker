@@ -13,7 +13,10 @@ def extract_pdf_text(pdf_path, max_pages=10):
         text_content = ""
         with pdfplumber.open(pdf_path) as pdf:
             # 限制页数以避免过长的内容
-            pages_to_read = min(len(pdf.pages), max_pages)
+            if max_pages is None:
+                pages_to_read = len(pdf.pages)
+            else:
+                pages_to_read = min(len(pdf.pages), max_pages)
             
             for i in range(pages_to_read):
                 page = pdf.pages[i]
@@ -90,22 +93,30 @@ def check_topic_relevance(paper):
         # 出错时默认为优先级2，避免遗漏
         return 2, f"检查出错，默认处理: {str(e)}"
 
-def analyze_paper(pdf_path, paper):
+def analyze_paper(pdf_path, paper, max_pages=10):
     """分析论文内容，支持多种AI分析后端"""
     try:
         # 从Author对象中提取作者名
         author_names = [author.name for author in paper.authors]
 
-        # 提取PDF文本内容（默认10页）
-        pdf_content = extract_pdf_text(pdf_path)
+        # 提取PDF文本内容
+        pdf_content = extract_pdf_text(pdf_path, max_pages=max_pages)
 
         # 获取高质量中文标题翻译
         from translator import translate_abstract_with_deepseek
-        zh_title = translate_abstract_with_deepseek(paper, translate_title_only=True)
+        zh_title_raw = translate_abstract_with_deepseek(paper, translate_title_only=True)
+        
+        # 提取纯中文标题用于日志
+        zh_title_clean = paper.title
+        if "**中文标题**:" in zh_title_raw:
+            for line in zh_title_raw.split('\n'):
+                if line.startswith("**中文标题**:"):
+                    zh_title_clean = line.replace("**中文标题**:", "").strip()
+                    break
 
         prompt = fr"""
 【重要】请使用中文回答，并以Markdown格式 (包含数学公式)，分自然段格式输出。请严格注意：所有行内公式请用 $...$ 包裹, 注意公式$...$内部前后不要有空格, 以免影响渲染, 行间公式使用 $$...$$, 并在公式前后空一行. 保证公式能被Markdown正确渲染。将你认为重要的词语加粗表示.
-请在开头单独输出一行：{zh_title}
+请在开头单独输出一行：{zh_title_raw}
 
 论文标题: {paper.title}
 作者: {', '.join(author_names)}
@@ -114,7 +125,7 @@ def analyze_paper(pdf_path, paper):
 
 论文摘要: {paper.summary}
 
-论文PDF内容（前10页）:
+论文PDF内容:
 {pdf_content}
 
 请基于上述论文的摘要和PDF内容进行分析，并提供：
@@ -123,13 +134,13 @@ def analyze_paper(pdf_path, paper):
 3. 研究方法、关键技术和核心工具 (约4000字):
 a) 描述证明中使用的核心分析学工具（例如：不动点定理、紧性原理、变分方法、Strichartz 估计、特定类型的能量估计）; b) 描述论文中解决技术性难题（如非线性项或奇异性）时采用的主要技巧。
 4. 与之前工作的比较 (约4000字):
-a) 描述文章声称做出的突破或改进。这种改进主要体现在放宽了先前工作的哪些假设条件（例如：对初始数据正则性要求的降低、维度的推广等）？或者论文获得的结果（如解的正则性、存在性、唯一性或稳定性）比现有结果强在哪里？
+a) 描述文章声称做出的突破 or 改进。这种改进主要体现在放宽了先前工作的哪些假设条件（例如：对初始数据正则性要求的降低、维度的推广等）？或者论文获得的结果（如解的正则性、存在性、唯一性或稳定性）比现有结果强在哪里？
 
 重要: 再次提醒, 由于内容需要符合mathjax的渲染要求, 请严格注意：所有行内公式请用单美元符号 $...$; 同样, 不要使用 \[...\] 包裹行间公式, 请使用 $$...$$ 包裹行间公式, 并在公式前后空一行. 此外, 所有小标题中不要再用加粗标记, 请直接使用普通文字.
 
         """
 
-        logger.info(f"正在分析论文: {paper.title}")
+        logger.info(f"正在分析论文: {zh_title_clean}")
         analysis = ai_client.chat_completion(
             messages=[
                 {"role": "system", "content": "你是一位专门总结和分析学术论文的研究助手。请使用中文回复。"},

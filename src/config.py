@@ -16,10 +16,12 @@ DOUBAO_API_KEY = os.getenv("DOUBAO_API_KEY")
 DOUBAO_API_BASE = os.getenv("DOUBAO_API_BASE")
 KIMI_API_KEY = os.getenv("KIMI_API_KEY")
 KIMI_API_BASE = os.getenv("KIMI_API_BASE")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
 CUSTOM_API_BASE = os.getenv("CUSTOM_API_BASE")
 CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
 # AI模型配置
-AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")  # 支持: deepseek, openai, glm, custom
+AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")  # 支持: deepseek, openai, glm, custom, openrouter, siliconflow
 AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")  # 模型名称
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -63,6 +65,7 @@ SECONDARY_TOPICS = os.getenv("SECONDARY_TOPICS", "|".join(default_secondary_topi
 # API调用延时配置
 PRIORITY_ANALYSIS_DELAY = int(os.getenv("PRIORITY_ANALYSIS_DELAY", "3"))  # 重点论文分析延时（秒）
 SECONDARY_ANALYSIS_DELAY = int(os.getenv("SECONDARY_ANALYSIS_DELAY", "2"))  # 摘要翻译延时（秒）
+MAX_THREADS = int(os.getenv("MAX_THREADS", "5"))  # 最大线程数
 
 # 邮件配置
 EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX", "ArXiv论文分析报告")
@@ -104,6 +107,16 @@ class AIClient:
             import openai
             openai.api_key = KIMI_API_KEY
             openai.api_base = KIMI_API_BASE or "https://api.moonshot.cn/v1"
+            self.client = openai
+        elif self.provider == "openrouter":
+            import openai
+            openai.api_key = OPENROUTER_API_KEY
+            openai.api_base = "https://openrouter.ai/api/v1"
+            self.client = openai
+        elif self.provider == "siliconflow":
+            import openai
+            openai.api_key = SILICONFLOW_API_KEY
+            openai.api_base = "https://api.siliconflow.cn/v1"
             self.client = openai
         elif self.provider == "custom":
             import openai

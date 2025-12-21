@@ -52,10 +52,21 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False):
                 {"role": "user", "content": prompt},
             ]
         )
+        
+        # 提取翻译后的标题用于日志
+        translated_title = ""
+        if "**中文标题**:" in translation:
+            for line in translation.split('\n'):
+                if line.startswith("**中文标题**:"):
+                    translated_title = line.replace("**中文标题**:", "").strip()
+                    break
+        
+        log_title = translated_title if translated_title else paper.title
+        
         if translate_title_only:
-            logger.info(f"标题翻译完成: {paper.title}")
+            logger.info(f"标题翻译完成: {log_title}")
         else:
-            logger.info(f"摘要翻译完成: {paper.title}")
+            logger.info(f"摘要翻译完成: {log_title}")
         return translation
     except Exception as e:
         if translate_title_only:
