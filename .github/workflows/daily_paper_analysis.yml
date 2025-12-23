@@ -44,9 +44,18 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
         QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+        DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY }}
+        DOUBAO_API_BASE: ${{ vars.DOUBAO_API_BASE }}
+        KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        KIMI_API_BASE: ${{ vars.KIMI_API_BASE }}
+        CUSTOM_API_KEY: ${{ secrets.CUSTOM_API_KEY }}
+        CUSTOM_API_BASE: ${{ vars.CUSTOM_API_BASE }}
         # AI模型选择配置
         AI_PROVIDER: ${{ vars.AI_PROVIDER || 'qwen' }}
         AI_MODEL: ${{ vars.AI_MODEL || 'qwen-plus' }}
+        MAX_THREADS: ${{ vars.MAX_THREADS || '5' }}
         # QQ邮箱服务器配置
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
         SMTP_PORT: ${{ secrets.SMTP_PORT }}
