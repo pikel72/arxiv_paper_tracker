@@ -127,16 +127,37 @@ class AIClient:
             raise ValueError(f"不支持的AI提供商: {self.provider}")
     
     def chat_completion(self, messages, **kwargs):
-        """统一的聊天完成接口"""
-        try:
-            response = self.client.ChatCompletion.create(
-                model=self.model,
-                messages=messages,
-                **kwargs
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            raise Exception(f"AI API调用失败 ({self.provider}): {str(e)}")
+        """统一的聊天完成接口，包含失败重试机制"""
+        import time
+        import random
+        
+        max_retries = 3
+        backoff_factor = 2
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.ChatCompletion.create(
+                    model=self.model,
+                    messages=messages,
+                    **kwargs
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                error_msg = str(e).lower()
+                # 检查是否是频率限制错误
+                is_rate_limit = any(keyword in error_msg for keyword in ["rate limit", "too many requests", "429"])
+                
+                if attempt < max_retries - 1:
+                    wait_time = (backoff_factor ** attempt) + random.uniform(0, 1)
+                    if is_rate_limit:
+                        wait_time += 5  # 频率限制时额外多等一会儿
+                    
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"AI API调用失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}。将在 {wait_time:.1f}s 后重试...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(f"AI API调用在 {max_retries} 次尝试后仍然失败 ({self.provider}): {str(e)}")
 
 
 # 创建全局AI客户端实例

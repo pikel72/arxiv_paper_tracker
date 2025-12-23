@@ -13,7 +13,7 @@ cd /d "%ROOT%" || (
 :menu
 cls
 echo ========================================
-echo ArXiv Paper Tracker - Interactive Tool
+echo arXiv Paper Tracker - Interactive Tool
 echo ========================================
 echo.
 echo Please select an operation:

@@ -30,6 +30,10 @@ logger = logging.getLogger(__name__)
 def process_single_paper_task(paper, index, total):
     """处理单篇论文的任务函数，用于多线程"""
     try:
+        # 线程启动时稍微错开，避免瞬间并发过高
+        import random
+        time.sleep(random.uniform(0, 2))
+        
         logger.info(f"正在处理论文 {index}/{total}: {paper.title}")
         
         # 检查主题相关性和优先级

@@ -187,7 +187,9 @@ def delete_pdf(pdf_path):
         logger.error(f"删除PDF文件失败 {pdf_path}: {str(e)}")
 
 def download_paper(paper, output_dir):
-    """将论文PDF下载到指定目录"""
+    """将论文PDF下载到指定目录，包含重试机制"""
+    import time
+    import random
     pdf_path = output_dir / f"{paper.get_short_id().replace('/', '_')}.pdf"
     
     # 如果已下载则跳过
@@ -195,11 +197,18 @@ def download_paper(paper, output_dir):
         logger.info(f"论文已下载: {pdf_path}")
         return pdf_path
     
-    try:
-        logger.info(f"正在下载: {paper.title}")
-        paper.download_pdf(str(pdf_path))
-        logger.info(f"已下载到 {pdf_path}")
-        return pdf_path
-    except Exception as e:
-        logger.error(f"下载论文失败 {paper.title}: {str(e)}")
-        return None
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"正在下载 (尝试 {attempt + 1}/{max_retries}): {paper.title}")
+            paper.download_pdf(str(pdf_path))
+            logger.info(f"已下载到 {pdf_path}")
+            return pdf_path
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 5 + random.uniform(0, 2)
+                logger.warning(f"下载论文失败 {paper.title}: {str(e)}。将在 {wait_time:.1f}s 后重试...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"下载论文在 {max_retries} 次尝试后仍然失败 {paper.title}: {str(e)}")
+                return None
