@@ -47,8 +47,8 @@ def process_single_paper_task(paper, index, total):
             if pdf_path:
                 time.sleep(PRIORITY_ANALYSIS_DELAY)
                 analysis = analyze_paper(pdf_path, paper)
-                delete_pdf(pdf_path)
-                return 1, (paper, analysis)
+                # 不在这里删除 PDF，返回 pdf_path 供后续统一清理
+                return 1, (paper, analysis, pdf_path)
             else:
                 # 如果下载失败，降级为摘要翻译
                 logger.warning(f"PDF下载失败，降级处理: {paper.title}")
@@ -77,23 +77,100 @@ def process_single_paper_task(paper, index, total):
         return -1, None
 
 def main():
-    parser = argparse.ArgumentParser(description="ArXiv 论文追踪与分析器")
-    parser.add_argument('--single', type=str, help='单论文分析模式，输入 arXiv ID，例如 2401.12345')
-    parser.add_argument('-p', '--pages', type=str, default='10', help='最大PDF提取页数，数字或 all（全部页）')
+    parser = argparse.ArgumentParser(
+        description="ArXiv 论文追踪与分析器",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用示例:
+  批量模式（自动日期）:
+    python src/main.py
+  
+  批量模式（指定日期）:
+    python src/main.py --date 2025-12-25
+    python src/main.py --date 2025-12-20:2025-12-25
+  
+  单论文分析（arXiv ID）:
+    python src/main.py --arxiv 2401.12345
+    python src/main.py --arxiv 2401.12345 -p all
+  
+  单PDF分析（本地文件）:
+    python src/main.py --pdf ./papers/some_paper.pdf
+    python src/main.py --pdf ./paper.pdf -p 20
+  
+  缓存管理:
+    python src/main.py --cache-stats
+    python src/main.py --clear-cache
+    python src/main.py --clear-cache analysis
+        """
+    )
+    
+    # 批量模式参数
+    parser.add_argument('--date', type=str, 
+                       help='指定抓取日期，格式: YYYY-MM-DD 或 YYYY-MM-DD:YYYY-MM-DD（日期范围）')
+    
+    # 单论文分析参数
+    parser.add_argument('--arxiv', type=str, 
+                       help='通过 arXiv ID 分析论文，例如 2401.12345')
+    parser.add_argument('--pdf', type=str, 
+                       help='直接分析本地 PDF 文件路径')
+    parser.add_argument('-p', '--pages', type=str, default='10', 
+                       help='最大PDF提取页数，数字或 all（全部页），默认 10')
+    
+    # 兼容旧参数
+    parser.add_argument('--single', type=str, 
+                       help='[已废弃] 请使用 --arxiv 代替')
+    
+    # 缓存管理
+    parser.add_argument('--cache-stats', action='store_true', 
+                       help='显示缓存统计信息')
+    parser.add_argument('--clear-cache', type=str, nargs='?', const='all', 
+                       help='清除缓存，可选类型: classification, analysis, translation, papers, all')
+    
     args = parser.parse_args()
 
-    if args.single:
-        # 解析 pages 参数
-        if args.pages.lower() == 'all':
-            max_pages = None
-        else:
-            try:
-                max_pages = int(args.pages)
-            except Exception:
-                max_pages = 10
-        analyze_single_paper(args.single, max_pages=max_pages)
+    # 缓存管理命令
+    if args.cache_stats:
+        from cache import get_cache_stats
+        stats = get_cache_stats()
+        print(f"📦 缓存统计:")
+        print(f"   总文件数: {stats['total']}")
+        print(f"   总大小: {stats['size_mb']} MB")
+        print(f"   按类型:")
+        for cache_type, count in stats.get('by_type', {}).items():
+            print(f"     - {cache_type}: {count} 个")
+        return
+    
+    if args.clear_cache:
+        from cache import clear_cache
+        cache_type = None if args.clear_cache == 'all' else args.clear_cache
+        count = clear_cache(cache_type)
+        type_str = args.clear_cache if args.clear_cache != 'all' else '所有'
+        print(f"🗑️ 已清除 {count} 个{type_str}缓存文件")
         return
 
+    # 解析 pages 参数
+    if args.pages.lower() == 'all':
+        max_pages = None
+    else:
+        try:
+            max_pages = int(args.pages)
+        except Exception:
+            max_pages = 10
+
+    # 单 PDF 分析模式（新增）
+    if args.pdf:
+        analyze_local_pdf(args.pdf, max_pages=max_pages)
+        return
+
+    # 单论文分析模式（通过 arXiv ID）
+    arxiv_id = args.arxiv or args.single  # 兼容旧参数
+    if arxiv_id:
+        if args.single:
+            logger.warning("--single 参数已废弃，请使用 --arxiv 代替")
+        analyze_single_paper(arxiv_id, max_pages=max_pages)
+        return
+
+    # 批量模式
     start_time = time.time()
     logger.info("开始arXiv论文跟踪")
     logger.info(f"配置信息:")
@@ -101,10 +178,12 @@ def main():
     logger.info(f"- 最大论文数: {MAX_PAPERS}")
     logger.info(f"- 重点主题数量: {len(PRIORITY_TOPICS)}")
     logger.info(f"- 了解主题数量: {len(SECONDARY_TOPICS)}")
+    if args.date:
+        logger.info(f"- 指定日期: {args.date}")
     
-    # 获取最近几天的论文
-    papers = get_recent_papers(CATEGORIES, MAX_PAPERS)
-    logger.info(f"从最近几天找到{len(papers)}篇论文")
+    # 获取论文（支持指定日期）
+    papers = get_recent_papers(CATEGORIES, MAX_PAPERS, target_date=args.date)
+    logger.info(f"找到 {len(papers)} 篇论文")
     
     if not papers:
         logger.info("所选时间段没有找到论文。退出。")
@@ -145,17 +224,29 @@ def main():
         logger.info("没有找到任何论文，不发送邮件。")
         return
     
+    # 提取 PDF 路径列表，用于最后清理
+    pdf_paths_to_clean = [data[2] for data in priority_analyses if len(data) > 2 and data[2]]
+    
+    # 转换数据格式：去掉 pdf_path，保持 (paper, analysis) 格式用于后续处理
+    priority_analyses_clean = [(data[0], data[1]) for data in priority_analyses]
+    
     # 将分析结果写入带时间戳的.md文件
-    result_file = write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers)
+    result_file = write_to_conclusion(priority_analyses_clean, secondary_analyses, irrelevant_papers)
     
     # 发送邮件，包含附件
-    email_content = format_email_content(priority_analyses, secondary_analyses, irrelevant_papers)
+    email_content = format_email_content(priority_analyses_clean, secondary_analyses, irrelevant_papers)
     email_success = send_email(email_content, attachment_path=result_file)
     
     if email_success:
         logger.info("邮件发送完成")
     else:
         logger.warning("邮件发送可能失败，请手动检查")
+    
+    # 所有操作完成后，最后清理 PDF 文件
+    if pdf_paths_to_clean:
+        logger.info(f"清理 {len(pdf_paths_to_clean)} 个 PDF 文件...")
+        for pdf_path in pdf_paths_to_clean:
+            delete_pdf(pdf_path)
     
     end_time = time.time()
     duration = end_time - start_time
@@ -191,7 +282,7 @@ def fetch_paper_by_id(arxiv_id):
 
 
 def analyze_single_paper(arxiv_id, max_pages=10):
-    """本地单论文分析流程：获取元数据、下载PDF、提取文本、调用AI分析并写入结果。max_pages=None 表示全部页。"""
+    """通过 arXiv ID 分析论文：获取元数据、下载PDF、调用AI分析并写入结果。"""
     start_time = time.time()
     logger.info(f"开始单论文分析: {arxiv_id}")
 
@@ -206,11 +297,8 @@ def analyze_single_paper(arxiv_id, max_pages=10):
         logger.error("PDF 下载失败，终止分析")
         return
 
-    # 计算实际提取页数
-    max_pages_actual = None if max_pages is None else max_pages
-
     # 调用分析函数（复用 analyzer.analyze_paper）
-    analysis = analyze_paper(pdf_path, paper, max_pages=max_pages_actual)
+    analysis = analyze_paper(pdf_path, paper, max_pages=max_pages)
 
     # 用单论文专用输出函数生成 Markdown 文件
     safe_id = arxiv_id.replace('/', '_')
@@ -225,6 +313,74 @@ def analyze_single_paper(arxiv_id, max_pages=10):
 
     # 可选择删除 PDF
     delete_pdf(pdf_path)
+
+
+def analyze_local_pdf(pdf_path, max_pages=10):
+    """直接分析本地 PDF 文件，不依赖 arXiv 元数据"""
+    from pathlib import Path
+    from analyzer import analyze_pdf_only
+    
+    start_time = time.time()
+    pdf_path = Path(pdf_path)
+    
+    if not pdf_path.exists():
+        logger.error(f"PDF 文件不存在: {pdf_path}")
+        return
+    
+    logger.info(f"开始分析本地 PDF: {pdf_path}")
+    
+    # 调用纯 PDF 分析函数
+    analysis = analyze_pdf_only(str(pdf_path), max_pages=max_pages)
+    
+    # 生成输出文件
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    output_filename = f"pdf_{pdf_path.stem}_{now}.md"
+    output_path = RESULTS_DIR / output_filename
+    
+    # 从分析结果中提取标题信息
+    chinese_title = ""
+    english_title = ""
+    authors = ""
+    
+    if analysis:
+        for line in analysis.split('\n'):
+            if line.startswith("**中文标题**:"):
+                chinese_title = line.replace("**中文标题**:", "").strip()
+            elif line.startswith("**英文标题**:"):
+                english_title = line.replace("**英文标题**:", "").strip()
+            elif line.startswith("**作者**:"):
+                authors = line.replace("**作者**:", "").strip()
+    
+    # 写入 Markdown 文件
+    datetime_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    from config import AI_MODEL
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(f"---\n")
+        f.write(f"title: \"{chinese_title if chinese_title else pdf_path.stem}\"\n")
+        f.write(f"date: {datetime_str}\n")
+        f.write(f"source: local_pdf\n")
+        f.write(f"pdf_file: {pdf_path.name}\n")
+        f.write(f"ai_model: {AI_MODEL}\n")
+        f.write(f"---\n\n")
+        
+        if chinese_title:
+            f.write(f"# {chinese_title}\n\n")
+        if english_title:
+            f.write(f"**{english_title}**\n\n")
+        if authors:
+            f.write(f"**作者**: {authors}\n\n")
+        
+        f.write(f"**源文件**: {pdf_path.name}\n\n")
+        f.write(f"---\n\n")
+        f.write(f"## 详细分析\n\n{analysis}\n")
+    
+    end_time = time.time()
+    duration = end_time - start_time
+    logger.info(f"PDF 分析完成，总耗时: {duration:.2f}秒")
+    logger.info(f"结果保存至: {output_path.absolute()}")
+
 
 if __name__ == "__main__":
     main()

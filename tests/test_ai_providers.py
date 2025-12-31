@@ -3,7 +3,8 @@
 
 import os
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
 
 def test_ai_providers():
     """测试不同AI提供商的配置"""
@@ -22,6 +23,7 @@ def test_ai_providers():
             print(f"✅ {provider}: {model} - 配置成功")
         except Exception as e:
             print(f"❌ {provider}: {model} - 配置失败: {e}")
+
 
 if __name__ == "__main__":
     test_ai_providers()
