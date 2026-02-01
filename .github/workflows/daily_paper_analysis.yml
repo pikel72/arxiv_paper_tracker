@@ -102,8 +102,13 @@ jobs:
       if: github.repository == 'pikel72/arxiv_paper_tracker'
       run: |
         mkdir -p pages_src/content/report/
-        latest_file=$(ls -t results/*.md | head -n 1)
-        cp "$latest_file" pages_src/content/report/
+        latest_file=$(ls -t results/*.md 2>/dev/null | head -n 1)
+        if [ -n "$latest_file" ]; then
+          cp "$latest_file" pages_src/content/report/
+          echo "Results copied: $latest_file"
+        else
+          echo "No analysis results available for this run (possible weekend skip)"
+        fi
 
     - name: Commit and push to pages_src
       if: github.repository == 'pikel72/arxiv_paper_tracker'
