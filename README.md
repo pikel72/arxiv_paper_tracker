@@ -1,12 +1,16 @@
 # ArXiv论文追踪与分析器
 
-一个基于 GitHub Actions 的自动化工具，每天早上自动追踪和分析 arXiv 最新论文，并通过邮件发送分析报告。该工具使用 DeepSeek AI 进行论文分析和总结。
+一个基于 GitHub Actions 的自动化工具，每天早上自动追踪和分析 arXiv 最新论文，并通过邮件发送分析报告。该工具支持多种 AI 模型进行论文分析和总结。
 
 ## 功能特点
 
-- 每天早上 8 点自动运行（UTC+8）
-- 自动追踪最近发布的 AI、机器学习和 NLP 类别的论文
-- 使用 DeepSeek AI 进行论文分析和总结
+- 每天北京时间早上 10:40 自动运行（UTC 02:40）
+- 自动追踪最近发布的 arXiv 论文（默认类别：数学偏微分方程 math.AP）
+- 支持多种 AI 模型提供商（DeepSeek、OpenAI、智谱AI、通义千问、豆包、Kimi、OpenRouter、SiliconFlow 等）
+- 智能主题分类：重点关注论文进行完整分析，了解领域论文翻译摘要
+- 多线程并行处理，提高分析效率
+- 内置缓存机制，避免重复分析
+- 支持单论文分析和本地 PDF 分析
 - 通过邮件发送分析报告
 - 自动保存分析结果到 conclusion.md
 - 自动清理下载的 PDF 文件以节省空间
@@ -26,12 +30,15 @@ cp .env.example .env
 3. 在 GitHub 仓库中，进入 **Settings → Secrets and variables → Actions**，点击 **Secrets** 标签页，添加以下敏感信息：
 
 ```
+QWEN_API_KEY=sk-your-qwen-api-key
 DEEPSEEK_API_KEY=sk-your-deepseek-api-key
 OPENAI_API_KEY=sk-your-openai-api-key
 GLM_API_KEY=your-glm-api-key
-QWEN_API_KEY=sk-your-qwen-api-key
-SMTP_SERVER=smtp.qq.com
-SMTP_PORT=587
+DOUBAO_API_KEY=your-doubao-api-key
+KIMI_API_KEY=your-kimi-api-key
+OPENROUTER_API_KEY=your-openrouter-api-key
+SILICONFLOW_API_KEY=your-siliconflow-api-key
+CUSTOM_API_KEY=your-custom-api-key
 SMTP_USERNAME=your_qq@qq.com
 SMTP_PASSWORD=your_qq_authorization_code
 EMAIL_FROM=your_qq@qq.com
@@ -39,17 +46,11 @@ EMAIL_TO=recipient@email.com
 ```
 
 **Secrets 配置说明：**
-- `DEEPSEEK_API_KEY`: 从 [DeepSeek 官网](https://platform.deepseek.com/) 获取的 API 密钥
-- `OPENAI_API_KEY`: 从 [OpenAI 官网](https://platform.openai.com/) 获取的 API 密钥
-- `GLM_API_KEY`: 从 [智谱AI](https://open.bigmodel.cn/) 获取的 API 密钥
-- `QWEN_API_KEY`: 从 [通义千问](https://dashscope.aliyun.com/) 获取的 API 密钥
-- 下文提到的其他大模型提供商的密钥
-- `SMTP_SERVER`: 邮件服务器地址
-- `SMTP_PORT`: SMTP 端口（QQ邮箱建议使用587）
+- 各个 AI 提供商的 API 密钥（只需配置您使用的提供商）
 - `SMTP_USERNAME`: 发送邮件的邮箱账号
 - `SMTP_PASSWORD`: 邮箱授权码（不是登录密码）
 - `EMAIL_FROM`: 发件人邮箱（通常与SMTP_USERNAME相同）
-- `EMAIL_TO`: 收件人邮箱
+- `EMAIL_TO`: 收件人邮箱（支持多个，用逗号分隔）
 
 #### GitHub Variables 配置（非敏感配置）
 
@@ -57,10 +58,11 @@ EMAIL_TO=recipient@email.com
 
 ```
 ARXIV_CATEGORIES=math.AP
-MAX_PAPERS=40
-SEARCH_DAYS=7
-AI_PROVIDER=deepseek
-AI_MODEL=deepseek-chat
+MAX_PAPERS=50
+SEARCH_DAYS=5
+AI_PROVIDER=qwen
+AI_MODEL=qwen-turbo
+MAX_THREADS=5
 PRIORITY_TOPICS=Navier-Stokes方程|Euler方程|湍流|涡度
 SECONDARY_TOPICS=色散偏微分方程|调和分析|极大算子
 PRIORITY_ANALYSIS_DELAY=3
@@ -72,8 +74,9 @@ EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
 - `ARXIV_CATEGORIES`: ArXiv 论文类别，用逗号分隔（如：`math.AP,math.NA`）
 - `MAX_PAPERS`: 每次获取的最大论文数量
 - `SEARCH_DAYS`: 搜索最近几天的论文
-- `AI_PROVIDER`: AI提供商选择，支持 `deepseek`, `openai`, `glm`
-- `AI_MODEL`: AI模型名称（如：`deepseek-chat`, `gpt-4`, `glm-4`）
+- `AI_PROVIDER`: AI提供商选择，支持 `deepseek`, `openai`, `glm`, `qwen`, `doubao`, `kimi`, `openrouter`, `siliconflow`, `custom`
+- `AI_MODEL`: AI模型名称（默认 `qwen-turbo`）
+- `MAX_THREADS`: 并行处理的最大线程数（默认5）
 - `PRIORITY_TOPICS`: 重点关注主题，用 `|` 分隔，与之相关的论文会进行完整分析
 - `SECONDARY_TOPICS`: 了解领域主题，用 `|` 分隔，与之相关的论文只翻译摘要
 - `PRIORITY_ANALYSIS_DELAY`: 重点论文分析间隔时间（秒）
@@ -97,8 +100,10 @@ pip install -r requirements.txt
 | OpenAI | `AI_PROVIDER=openai` | `gpt-4` | [OpenAI官网](https://platform.openai.com/) |
 | 智谱AI | `AI_PROVIDER=glm` | `glm-4` | [智谱AI](https://open.bigmodel.cn/) |
 | 通义千问 | `AI_PROVIDER=qwen` | `qwen-turbo` | [通义千问](https://dashscope.aliyun.com/) |
-| 豆包 | `AI_PROVIDER=doubao` | `doubao-chat` | [豆包官网](https://www.doubao.com/) |
-| Kimi | `AI_PROVIDER=kimi` | `kimi-gpt` | [Kimi官网](https://kimi.moonshot.cn/) |
+| 豆包 | `AI_PROVIDER=doubao` | `doubao-pro` | [豆包官网](https://www.doubao.com/) |
+| Kimi | `AI_PROVIDER=kimi` | `moonshot-v1-8k` | [Kimi官网](https://kimi.moonshot.cn/) |
+| OpenRouter | `AI_PROVIDER=openrouter` | 根据模型 | [OpenRouter官网](https://openrouter.ai/) |
+| SiliconFlow | `AI_PROVIDER=siliconflow` | 根据模型 | [SiliconFlow官网](https://siliconflow.cn/) |
 | 自定义 | `AI_PROVIDER=custom` | 自定义 | 需配置 CUSTOM_API_BASE/CUSTOM_API_KEY |
 
 ### 配置示例
@@ -166,40 +171,105 @@ CUSTOM_API_BASE=https://your-custom-api.com/v1
 ## 配置说明
 
 
-### 单论文分析（本地命令行）
+### 命令行参数（本地运行）
 
-支持直接分析指定 arXiv 论文，适合单篇精读或补充分析。
+除了 GitHub Actions 自动运行，您也可以在本地通过命令行运行，支持多种模式。
 
-**命令格式：**
+#### 批量模式
+
+自动获取和分析最近论文（使用配置中的类别和时间范围）：
 
 ```bash
-python src/main.py --single <arxiv_id> [-p <页数或all>]
+python src/main.py
 ```
 
-参数说明：
-- `--single <arxiv_id>`：指定要分析的 arXiv 论文编号（如 `2305.09582`）。
-- `-p <页数>` 或 `--pages <页数>`：最大 PDF 提取页数，默认为 10。可用数字（如 20），或 `all` 表示全部页。
+指定日期分析：
 
-**示例：**
-
-只分析前 10 页：
 ```bash
-python src/main.py --single 2305.09582
+# 分析指定日期
+python src/main.py --date 2025-12-25
+
+# 分析日期范围
+python src/main.py --date 2025-12-20:2025-12-25
 ```
 
-分析前 20 页：
+#### 单论文分析
+
+通过 arXiv ID 分析指定论文：
+
 ```bash
-python src/main.py --single 2305.09582 -p 20
+# 分析前 10 页（默认）
+python src/main.py --arxiv 2401.12345
+
+# 分析前 20 页
+python src/main.py --arxiv 2401.12345 -p 20
+
+# 分析全部页
+python src/main.py --arxiv 2401.12345 -p all
 ```
 
-分析全部页：
+#### 本地 PDF 分析
+
+直接分析本地 PDF 文件：
+
 ```bash
-python src/main.py --single 2305.09582 -p all
+python src/main.py --pdf ./papers/some_paper.pdf -p 20
+```
+
+#### 缓存管理
+
+查看和清理缓存：
+
+```bash
+# 显示缓存统计
+python src/main.py --cache-stats
+
+# 清除所有缓存
+python src/main.py --clear-cache
+
+# 清除特定类型缓存
+python src/main.py --clear-cache classification
+python src/main.py --clear-cache analysis
+python src/main.py --clear-cache translation
 ```
 
 **输出说明：**
-- 结果 Markdown 文件保存在 `results/` 目录，文件名如 `arxiv_2305.09582_2025-10-12_22-56-45.md`
-- 文件内容仅包含该论文的详细分析和基本信息，YAML 头部 description 字段为作者姓名
+- 批量模式结果保存在 `results/` 目录，文件名如 `arxiv_analysis_2025-02-07.md`
+- 单论文分析结果文件名如 `arxiv_2401.12345_2025-02-07_22-56-45.md`
+- 本地 PDF 分析结果文件名如 `pdf_some_paper_2025-02-07_22-56-45.md`
+
+### 邮件配置
+支持主流邮箱服务：
+- QQ 邮箱：需要在邮箱设置中开启 SMTP 服务并获取授权码
+- Gmail：需要开启两步验证并生成应用专用密码
+- 其他邮箱：需要确保支持 SMTP 服务
+
+### GitHub Actions 高级配置
+
+**修改运行时间：**
+
+在 `.github/workflows/daily_paper_analysis.yml` 中调整 cron 表达式：
+
+```yaml
+on:
+  schedule:
+    - cron: '40 2 * * *'  # UTC 时间，北京时间早上 10:40
+```
+
+**配置页面推送（可选）：**
+
+如需自动推送分析结果到 Pages 仓库，需要添加：
+- Secret: `GH_PAGES_TOKEN` - GitHub Personal Access Token（需要 repo 权限）
+- 在 workflow 中修改 `if: github.repository == 'your-username/arxiv_paper_tracker'`
+
+**工作流超时：**
+
+默认超时时间为 40 分钟，可在 workflow 中调整：
+
+```yaml
+jobs:
+  analyze-papers:
+    timeout-minutes: 40
 
 
 
@@ -213,9 +283,73 @@ python src/main.py --single 2305.09582 -p all
 - Gmail：需要开启两步验证并生成应用专用密码
 - 其他邮箱：需要确保支持 SMTP 服务
 
+## 故障排查
+
+### 常见问题
+
+**1. API 调用失败**
+
+- 检查 API 密钥是否正确配置
+- 确认 API 密钥是否有足够的配额
+- 检查网络连接是否正常
+- 如果遇到频率限制，可以增加 `PRIORITY_ANALYSIS_DELAY` 和 `SECONDARY_ANALYSIS_DELAY` 的值
+
+**2. 邮件发送失败**
+
+- 确认邮箱配置正确，特别是授权码/应用专用密码
+- 检查 SMTP 服务器地址和端口是否正确
+- QQ 邮箱必须使用授权码，不是登录密码
+- Gmail 需要开启两步验证并生成应用专用密码
+
+**3. 工作流超时**
+
+- 默认超时时间为 40 分钟
+- 如果论文数量较多或 PDF 较大，可能需要增加超时时间
+- 可以减少 `MAX_PAPERS` 的值来减少处理时间
+- 减少 `MAX_THREADS` 可能有助于降低并发压力
+
+**4. PDF 下载失败**
+
+- 某些 arXiv 论文可能没有 PDF 版本
+- 检查网络连接是否正常
+- 查看 GitHub Actions 日志获取详细错误信息
+
+**5. 本地运行问题**
+
+- 确保已安装所有依赖：`pip install -r requirements.txt`
+- 检查 `.env` 文件是否正确配置
+- Python 版本建议 3.8 或更高
+
+### 调试技巧
+
+**查看详细日志：**
+
+```bash
+# 本地运行时会显示详细日志
+python src/main.py
+```
+
+**查看缓存状态：**
+
+```bash
+python src/main.py --cache-stats
+```
+
+**清除缓存重新分析：**
+
+```bash
+python src/main.py --clear-cache all
+```
+
+**分析单篇论文进行测试：**
+
+```bash
+python src/main.py --arxiv 2401.12345 -p 5
+```
+
 ## 注意事项
 
-- 确保 DeepSeek API 密钥有效
+- 确保配置的 AI API 密钥有效且有足够配额
 - 邮箱配置正确（特别是授权码/应用专用密码）
 - GitHub Actions 每月有 2000 分钟的免费额度，足够日常使用
 - 如需修改运行时间，可以在 `.github/workflows/daily_paper_analysis.yml` 中调整 cron 表达式
