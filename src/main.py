@@ -361,6 +361,8 @@ def analyze_local_pdf(pdf_path, max_pages=10):
         f.write(f"title: \"{chinese_title if chinese_title else pdf_path.stem}\"\n")
         f.write(f"date: {datetime_str}\n")
         f.write(f"source: local_pdf\n")
+        if authors:
+            f.write(f"description: {authors}\n")
         f.write(f"pdf_file: {pdf_path.name}\n")
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"---\n\n")
@@ -372,7 +374,6 @@ def analyze_local_pdf(pdf_path, max_pages=10):
         if authors:
             f.write(f"**作者**: {authors}\n\n")
         
-        f.write(f"**源文件**: {pdf_path.name}\n\n")
         f.write(f"---\n\n")
         f.write(f"## 详细分析\n\n{analysis}\n")
     
