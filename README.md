@@ -169,6 +169,24 @@ CUSTOM_API_BASE=https://your-custom-api.com/v1
 
 脚本假设您已提前配置好虚拟环境和 `.env` 文件。本地 PDF 分析功能要求将 PDF 文件放在项目根目录的 `papers` 文件夹中。
 
+### macOS/Linux 便捷脚本
+
+在项目根目录运行 `run_tracker.sh` 脚本，进入交互式菜单：
+
+```bash
+chmod +x run_tracker.sh
+./run_tracker.sh
+```
+
+菜单选项与 Windows 脚本一致：
+
+- 选择 1：运行全流程分析（抓取并分析最近论文）
+- 选择 2：单论文分析（输入 arXiv ID 和可选页数）
+- 选择 3：本地 PDF 分析（自动列出 papers 文件夹下的 PDF，选择后分析）
+- 选择 4：退出
+
+同样要求提前配置好虚拟环境和 `.env` 文件。本地 PDF 分析需要将 PDF 放在项目根目录的 `papers` 文件夹中。
+
 ## 配置说明
 
 
