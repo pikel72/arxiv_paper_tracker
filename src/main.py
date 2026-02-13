@@ -298,7 +298,7 @@ def analyze_single_paper(arxiv_id, max_pages=10):
         return
 
     # 调用分析函数（复用 analyzer.analyze_paper）
-    analysis = analyze_paper(pdf_path, paper, max_pages=max_pages)
+    analysis = analyze_paper(pdf_path, paper, max_pages=max_pages, use_cache=False)
 
     # 用单论文专用输出函数生成 Markdown 文件
     safe_id = arxiv_id.replace('/', '_')
@@ -330,7 +330,7 @@ def analyze_local_pdf(pdf_path, max_pages=10):
     logger.info(f"开始分析本地 PDF: {pdf_path}")
     
     # 调用纯 PDF 分析函数
-    analysis = analyze_pdf_only(str(pdf_path), max_pages=max_pages)
+    analysis = analyze_pdf_only(str(pdf_path), max_pages=max_pages, use_cache=False)
     
     # 生成输出文件
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)

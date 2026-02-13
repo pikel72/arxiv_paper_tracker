@@ -7,16 +7,16 @@ from cache import get_cached_translation, cache_translation
 
 logger = logging.getLogger(__name__)
 
-def translate_abstract_with_deepseek(paper, translate_title_only=False):
+def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cache=True):
     """使用DeepSeek API翻译论文摘要"""
     arxiv_id = paper.get_short_id()
     
-    # 检查缓存
-    cached = get_cached_translation(arxiv_id, title_only=translate_title_only)
-    if cached is not None:
-        cache_type = "标题" if translate_title_only else "摘要"
-        logger.info(f"[缓存命中] {cache_type}翻译: {paper.title}")
-        return cached
+    if use_cache:
+        cached = get_cached_translation(arxiv_id, title_only=translate_title_only)
+        if cached is not None:
+            cache_type = "标题" if translate_title_only else "摘要"
+            logger.info(f"[缓存命中] {cache_type}翻译: {paper.title}")
+            return cached
     
     try:
         # 从Author对象中提取作者名
@@ -78,8 +78,8 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False):
         else:
             logger.info(f"摘要翻译完成: {log_title}")
         
-        # 保存到缓存
-        cache_translation(arxiv_id, translation, title_only=translate_title_only)
+        if use_cache:
+            cache_translation(arxiv_id, translation, title_only=translate_title_only)
         return translation
     except Exception as e:
         if translate_title_only:

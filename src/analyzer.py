@@ -110,15 +110,15 @@ def check_topic_relevance(paper):
         # 出错时默认为优先级2，避免遗漏
         return 2, f"检查出错，默认处理: {str(e)}"
 
-def analyze_paper(pdf_path, paper, max_pages=10):
+def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True):
     """分析论文内容，支持多种AI分析后端"""
     arxiv_id = paper.get_short_id()
     
-    # 检查缓存
-    cached = get_cached_analysis(arxiv_id)
-    if cached is not None:
-        logger.info(f"[缓存命中] 分析结果: {paper.title}")
-        return cached
+    if use_cache:
+        cached = get_cached_analysis(arxiv_id)
+        if cached is not None:
+            logger.info(f"[缓存命中] 分析结果: {paper.title}")
+            return cached
     
     try:
         # 从Author对象中提取作者名
@@ -129,7 +129,7 @@ def analyze_paper(pdf_path, paper, max_pages=10):
 
         # 获取高质量中文标题翻译
         from translator import translate_abstract_with_deepseek
-        zh_title_raw = translate_abstract_with_deepseek(paper, translate_title_only=True)
+        zh_title_raw = translate_abstract_with_deepseek(paper, translate_title_only=True, use_cache=use_cache)
         
         # 提取纯中文标题用于日志
         zh_title_clean = paper.title
@@ -174,15 +174,15 @@ a) 描述文章声称做出的突破 or 改进。这种改进主要体现在放�
         )
         logger.info(f"论文分析完成: {paper.title}")
         
-        # 保存到缓存
-        cache_analysis(arxiv_id, analysis)
+        if use_cache:
+            cache_analysis(arxiv_id, analysis)
         return analysis
     except Exception as e:
         logger.error(f"分析论文失败 {paper.title}: {str(e)}")
         return f"**论文分析出错**: {str(e)}"
 
 
-def analyze_pdf_only(pdf_path, max_pages=10, title: str = None):
+def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True):
     """
     纯 PDF 分析函数，不依赖 arXiv 元数据
     
@@ -201,14 +201,12 @@ def analyze_pdf_only(pdf_path, max_pages=10, title: str = None):
         logger.error(f"PDF 文件不存在: {pdf_path}")
         return f"**错误**: PDF 文件不存在: {pdf_path}"
     
-    # 使用文件名作为缓存 key
-    cache_key = pdf_path.stem
-    
-    # 检查缓存
-    cached = get_cached_analysis(cache_key)
-    if cached is not None:
-        logger.info(f"[缓存命中] 分析结果: {pdf_path.name}")
-        return cached
+    if use_cache:
+        cache_key = pdf_path.stem
+        cached = get_cached_analysis(cache_key)
+        if cached is not None:
+            logger.info(f"[缓存命中] 分析结果: {pdf_path.name}")
+            return cached
     
     try:
         # 提取 PDF 文本内容
@@ -254,8 +252,8 @@ a) 描述文章声称做出的突破或改进。这种改进主要体现在放�
         )
         logger.info(f"PDF 分析完成: {pdf_path.name}")
         
-        # 保存到缓存
-        cache_analysis(cache_key, analysis)
+        if use_cache:
+            cache_analysis(cache_key, analysis)
         return analysis
         
     except Exception as e:
