@@ -86,8 +86,8 @@ def main():
     python src/main.py
   
   批量模式（指定日期）:
-    python src/main.py --date 2025-12-25
-    python src/main.py --date 2025-12-20:2025-12-25
+    python src/main.py --date 20251225
+    python src/main.py --date 20251220:20251225
   
   单论文分析（arXiv ID）:
     python src/main.py --arxiv 2401.12345
@@ -106,7 +106,7 @@ def main():
     
     # 批量模式参数
     parser.add_argument('--date', type=str, 
-                       help='指定抓取日期，格式: YYYY-MM-DD 或 YYYY-MM-DD:YYYY-MM-DD（日期范围）')
+                       help='指定抓取日期，格式: YYYYMMDD 或 YYYYMMDD:YYYYMMDD（日期范围），也支持 YYYY-MM-DD')
     
     # 单论文分析参数
     parser.add_argument('--arxiv', type=str, 

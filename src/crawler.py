@@ -17,22 +17,30 @@ def parse_date_arg(date_str: str) -> Tuple[datetime.datetime, datetime.datetime]
     解析日期参数，支持单日期和日期范围
     
     格式:
-        - 单日期: "2025-12-25" 
-        - 日期范围: "2025-12-20:2025-12-25"
+        - 单日期: "20251225" 或 "2025-12-25"
+        - 日期范围: "20251220:20251225" 或 "2025-12-20:2025-12-25"
     
     Returns:
         (start_time, end_time) UTC 时间元组
     """
     tz = datetime.timezone.utc
     
+    def parse_single_date(s: str) -> datetime.datetime:
+        """解析单个日期，支持 YYYYMMDD 和 YYYY-MM-DD 格式"""
+        s = s.strip()
+        if '-' in s:
+            return datetime.datetime.strptime(s, '%Y-%m-%d')
+        else:
+            return datetime.datetime.strptime(s, '%Y%m%d')
+    
     if ':' in date_str:
         # 日期范围
         start_str, end_str = date_str.split(':', 1)
-        start_date = datetime.datetime.strptime(start_str.strip(), '%Y-%m-%d')
-        end_date = datetime.datetime.strptime(end_str.strip(), '%Y-%m-%d')
+        start_date = parse_single_date(start_str)
+        end_date = parse_single_date(end_str)
     else:
         # 单日期
-        start_date = datetime.datetime.strptime(date_str.strip(), '%Y-%m-%d')
+        start_date = parse_single_date(date_str)
         end_date = start_date
     
     # arXiv 论文发布时间是 UTC 18:00，所以我们用前一天18:00到当天18:00
@@ -49,7 +57,7 @@ def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[
     Args:
         categories: arXiv 类别列表
         max_results: 最大返回数量
-        target_date: 指定日期，格式 "2025-12-25" 或 "2025-12-20:2025-12-25"
+        target_date: 指定日期，格式 "20251225" 或 "20251220:20251225" (也支持 "2025-12-25" 格式)
                     如果为 None，则按当前日期和星期自动计算
     """
     today = datetime.datetime.now(datetime.timezone.utc)
@@ -60,7 +68,7 @@ def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[
             start_time, end_time = parse_date_arg(target_date)
             logger.info(f"使用指定日期范围: {start_time.strftime('%Y-%m-%d %H:%M')} ~ {end_time.strftime('%Y-%m-%d %H:%M')}")
         except ValueError as e:
-            logger.error(f"日期格式错误: {target_date}，应为 YYYY-MM-DD 或 YYYY-MM-DD:YYYY-MM-DD")
+            logger.error(f"日期格式错误: {target_date}，应为 YYYYMMDD 或 YYYYMMDD:YYYYMMDD (也支持 YYYY-MM-DD 格式)")
             return []
     else:
         # 原有的按星期自动计算逻辑

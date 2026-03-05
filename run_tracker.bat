@@ -17,24 +17,28 @@ echo arXiv Paper Tracker - Interactive Tool
 echo ========================================
 echo.
 echo Please select an operation:
-echo 1. Run full analysis
-echo 2. Analyze single paper (arXiv ID)
-echo 3. Analyze local PDF
-echo 4. Exit
+echo 1. Run full analysis (auto date)
+echo 2. Run analysis for specific date
+echo 3. Analyze single paper (arXiv ID)
+echo 4. Analyze local PDF file
+echo 5. Cache management
+echo 6. Exit
 echo.
-set /p choice="Enter your choice (1-4): "
+set /p choice="Enter your choice (1-6): "
 
 if "%choice%"=="1" goto run_all
-if "%choice%"=="2" goto run_single
-if "%choice%"=="3" goto run_local_pdf
-if "%choice%"=="4" goto exit_tool
+if "%choice%"=="2" goto run_date
+if "%choice%"=="3" goto run_arxiv
+if "%choice%"=="4" goto run_pdf
+if "%choice%"=="5" goto cache_menu
+if "%choice%"=="6" goto exit_tool
 
 echo Invalid choice, please try again.
 pause
 goto menu
 
 :run_all
-echo === Running Full Analysis ===
+echo === Running Full Analysis (Auto Date) ===
 if not exist "%PYTHON%" (
     echo Error: Virtual environment not found. Please configure the environment first.
     goto fail
@@ -44,7 +48,30 @@ echo Operation completed.
 pause
 goto menu
 
+<<<<<<< Updated upstream
 :run_single
+=======
+:run_date
+echo === Run Analysis for Specific Date ===
+echo Format: YYYYMMDD or YYYYMMDD:YYYYMMDD (range)
+echo Example: 20251225 or 20251220:20251225
+set /p date_input="Enter date or date range: "
+if "%date_input%"=="" (
+    echo Date cannot be empty.
+    pause
+    goto menu
+)
+if not exist "%PYTHON%" (
+    echo Error: Virtual environment not found. Please configure the environment first.
+    goto fail
+)
+"%PYTHON%" src\main.py --date %date_input% || goto fail
+echo Operation completed.
+pause
+goto menu
+
+:run_arxiv
+>>>>>>> Stashed changes
 echo === Single Paper Analysis (arXiv ID) ===
 set /p arxiv_id="Enter arXiv ID (e.g., 2305.09582): "
 if "%arxiv_id%"=="" (
@@ -63,6 +90,7 @@ echo Operation completed.
 pause
 goto menu
 
+<<<<<<< Updated upstream
 :run_local_pdf
 echo === Local PDF Analysis ===
 if not exist "papers" (
@@ -103,20 +131,86 @@ echo.
 set /p pages="Enter number of pages to extract (default 10, or 'all'): "
 if "%pages%"=="" set pages=10
 
+=======
+:run_pdf
+echo === Analyze Local PDF File ===
+set /p pdf_path="Enter PDF file path (e.g., ./papers/test.pdf): "
+if "%pdf_path%"=="" (
+    echo PDF path cannot be empty.
+    pause
+    goto menu
+)
+set /p pages="Enter number of pages to extract (default 10, or 'all'): "
+if "%pages%"=="" set pages=10
+>>>>>>> Stashed changes
 if not exist "%PYTHON%" (
     echo Error: Virtual environment not found. Please configure the environment first.
     goto fail
 )
+<<<<<<< Updated upstream
 
 "%PYTHON%" src\main.py --pdf "!selected_pdf!" -p %pages% || goto fail
+=======
+"%PYTHON%" src\main.py --pdf %pdf_path% -p %pages% || goto fail
+>>>>>>> Stashed changes
 echo Operation completed.
 pause
 goto menu
 
+<<<<<<< Updated upstream
 :invalid_pdf
 echo Invalid choice, please try again.
 pause
 goto menu
+=======
+:cache_menu
+cls
+echo === Cache Management ===
+echo 1. View cache statistics
+echo 2. Clear all cache
+echo 3. Clear classification cache
+echo 4. Clear analysis cache
+echo 5. Clear translation cache
+echo 6. Back to main menu
+echo.
+set /p cache_choice="Enter your choice (1-6): "
+
+if "%cache_choice%"=="1" goto cache_stats
+if "%cache_choice%"=="2" goto cache_clear_all
+if "%cache_choice%"=="3" goto cache_clear_classification
+if "%cache_choice%"=="4" goto cache_clear_analysis
+if "%cache_choice%"=="5" goto cache_clear_translation
+if "%cache_choice%"=="6" goto menu
+
+echo Invalid choice, please try again.
+pause
+goto cache_menu
+
+:cache_stats
+"%PYTHON%" src\main.py --cache-stats
+pause
+goto cache_menu
+
+:cache_clear_all
+"%PYTHON%" src\main.py --clear-cache
+pause
+goto cache_menu
+
+:cache_clear_classification
+"%PYTHON%" src\main.py --clear-cache classification
+pause
+goto cache_menu
+
+:cache_clear_analysis
+"%PYTHON%" src\main.py --clear-cache analysis
+pause
+goto cache_menu
+
+:cache_clear_translation
+"%PYTHON%" src\main.py --clear-cache translation
+pause
+goto cache_menu
+>>>>>>> Stashed changes
 
 :fail
 echo Operation failed, please check the command output.
