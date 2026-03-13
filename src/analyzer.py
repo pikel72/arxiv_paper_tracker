@@ -2,6 +2,7 @@
 
 import logging
 import pdfplumber
+import re
 
 from config import ai_client, PRIORITY_TOPICS, SECONDARY_TOPICS
 from cache import (
@@ -10,6 +11,87 @@ from cache import (
 )
 
 logger = logging.getLogger(__name__)
+
+SECTION_SPECS = [
+    ("研究对象和背景", ["研究对象和背景", "研究对象与背景", "背景与研究对象", "研究背景", "背景"]),
+    ("主要定理或主要结果", ["主要定理或主要结果", "主要结果", "主要定理", "核心结果", "关键结果"]),
+    ("研究方法、关键技术和核心工具", ["研究方法、关键技术和核心工具", "研究方法与关键技术", "方法与工具", "研究方法", "方法", "技术路线"]),
+    ("与之前工作的比较", ["与之前工作的比较", "与已有工作比较", "与先前工作比较", "与相关工作比较", "对比已有工作", "相关工作比较", "对比"]),
+]
+
+def _extract_sections(raw_text: str):
+    text = (raw_text or "").replace("\r\n", "\n")
+    lines = text.split("\n")
+    offsets = []
+    pos = 0
+    for line in lines:
+        offsets.append(pos)
+        pos += len(line) + 1
+
+    headings = []
+    for idx, line in enumerate(lines):
+        line_clean = re.sub(r"^[#\s>*-]+", "", line)
+        line_clean = re.sub(r"^\d+\s*[.\、]\s*", "", line_clean)
+        line_clean = line_clean.replace("**", "").replace("__", "")
+        line_clean = re.sub(r"[:：]\s*$", "", line_clean).strip()
+        if not line_clean:
+            continue
+        for canonical, aliases in SECTION_SPECS:
+            if any(alias in line_clean for alias in aliases):
+                headings.append(
+                    {
+                        "canonical": canonical,
+                        "start": offsets[idx] + len(line) + 1,
+                        "line_index": idx,
+                    }
+                )
+                break
+
+    # 只保留每个章节首次出现的位置
+    seen = set()
+    unique_headings = []
+    for h in sorted(headings, key=lambda x: x["start"]):
+        if h["canonical"] in seen:
+            continue
+        seen.add(h["canonical"])
+        unique_headings.append(h)
+
+    sections = {canonical: "" for canonical, _ in SECTION_SPECS}
+    for i, h in enumerate(unique_headings):
+        end = unique_headings[i + 1]["start"] if i + 1 < len(unique_headings) else len(text)
+        content = text[h["start"]:end].strip()
+        sections[h["canonical"]] = content
+
+    return sections
+
+def _extract_zh_title(raw_text: str, fallback: str):
+    text = (raw_text or "").replace("\r\n", "\n")
+    match = re.search(r"中文标题\s*[:：]\s*(.+)", text)
+    if match:
+        title = match.group(1).strip()
+        if title:
+            return title
+    return fallback
+
+def normalize_analysis_markdown(raw_text: str, zh_title: str):
+    sections = _extract_sections(raw_text)
+
+    def section_or_placeholder(key: str):
+        content = (sections.get(key) or "").strip()
+        return content if content else "（模型未给出相关内容）"
+
+    return (
+        f"# {zh_title}\n\n"
+        "## 详细分析\n\n"
+        "### 1. 研究对象和背景\n"
+        f"{section_or_placeholder('研究对象和背景')}\n\n"
+        "### 2. 主要定理或主要结果\n"
+        f"{section_or_placeholder('主要定理或主要结果')}\n\n"
+        "### 3. 研究方法、关键技术和核心工具\n"
+        f"{section_or_placeholder('研究方法、关键技术和核心工具')}\n\n"
+        "### 4. 与之前工作的比较\n"
+        f"{section_or_placeholder('与之前工作的比较')}\n"
+    )
 
 def extract_pdf_text(pdf_path, max_pages=10):
     """从PDF文件中提取文本内容"""
@@ -195,9 +277,10 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True):
         )
         logger.info(f"论文分析完成: {paper.title}")
         
+        normalized = normalize_analysis_markdown(analysis, zh_title_clean)
         if use_cache:
-            cache_analysis(arxiv_id, analysis)
-        return analysis
+            cache_analysis(arxiv_id, normalized)
+        return normalized
     except Exception as e:
         logger.error(f"分析论文失败 {paper.title}: {str(e)}")
         return f"**论文分析出错**: {str(e)}"
@@ -289,9 +372,11 @@ def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True):
         )
         logger.info(f"PDF 分析完成: {pdf_path.name}")
         
+        zh_title = _extract_zh_title(analysis, title)
+        normalized = normalize_analysis_markdown(analysis, zh_title)
         if use_cache:
-            cache_analysis(cache_key, analysis)
-        return analysis
+            cache_analysis(cache_key, normalized)
+        return normalized
         
     except Exception as e:
         logger.error(f"分析 PDF 失败 {pdf_path}: {str(e)}")

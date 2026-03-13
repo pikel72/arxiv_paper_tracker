@@ -1,3 +1,55 @@
+def _extract_chinese_title(text: str) -> str:
+    if not text:
+        return ""
+    lines = text.split("\n")
+    for line in lines:
+        if line.startswith("# "):
+            return line.replace("# ", "").strip()
+    for line in lines:
+        if line.startswith("**中文标题**:"):
+            return line.replace("**中文标题**:", "").strip()
+    return ""
+
+def _extract_abstract_translation(text: str) -> str:
+    if not text or "**摘要翻译**:" not in text:
+        return ""
+    lines = text.split("\n")
+    for idx, line in enumerate(lines):
+        if line.startswith("**摘要翻译**:"):
+            content = line.replace("**摘要翻译**:", "").strip()
+            if content:
+                return content
+            tail = []
+            for rest in lines[idx + 1:]:
+                if rest.startswith("**") and rest.endswith("**:"):
+                    break
+                if rest.strip():
+                    tail.append(rest.strip())
+            return "\n".join(tail).strip()
+    return ""
+
+def _get_paper_comment(paper) -> str:
+    comment = getattr(paper, "comment", None) or getattr(paper, "comments", None)
+    if comment:
+        return str(comment).strip()
+    return ""
+
+def _strip_analysis_heading(text: str) -> str:
+    if not text:
+        return ""
+    lines = text.replace("\r\n", "\n").split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and lines[0].startswith("# "):
+        lines.pop(0)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and lines[0].startswith("## 详细分析"):
+        lines.pop(0)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    return "\n".join(lines)
+
 def write_single_analysis(paper, analysis, filename: str = None):
     """将单论文分析结果写入 Markdown 文件，结构更简洁。"""
     import re
@@ -11,13 +63,12 @@ def write_single_analysis(paper, analysis, filename: str = None):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     author_names = [author.name for author in paper.authors]
     title = re.sub(r"\s+", " ", paper.title).strip()
-    chinese_title = ""
-    if analysis and "**中文标题**:" in analysis:
-        lines = analysis.split('\n')
-        for line in lines:
-            if line.startswith("**中文标题**:"):
-                chinese_title = line.replace("**中文标题**:", "").strip()
-                break
+    chinese_title = _extract_chinese_title(analysis)
+    analysis_body = _strip_analysis_heading(analysis)
+    from translator import translate_abstract_with_deepseek
+    translation = translate_abstract_with_deepseek(paper, translate_title_only=False, use_cache=True)
+    abstract_translation = _extract_abstract_translation(translation)
+    paper_comment = _get_paper_comment(paper)
     datetime_str = today.strftime('%Y-%m-%d %H:%M:%S')
     from config import AI_MODEL
     with open(md_file, 'w', encoding='utf-8') as f:
@@ -30,13 +81,18 @@ def write_single_analysis(paper, analysis, filename: str = None):
         f.write(f"---\n")
         f.write(f"# {chinese_title if chinese_title else title}\n")
         if chinese_title:
-            f.write(f"**{title}**\n\n")
+            f.write(f"{title}\n\n")
         f.write(f"**作者**: {', '.join(author_names)}\n\n")
         f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
         f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
         f.write(f"**arXiv ID**: {paper.get_short_id()}\n\n")
+        if abstract_translation:
+            f.write(f"**摘要翻译**: {abstract_translation}\n\n")
+        else:
+            f.write(f"**摘要**: {paper.summary}\n\n")
+        f.write(f"**Comment**: {paper_comment if paper_comment else '无'}\n\n")
         f.write(f"**链接**: {paper.entry_id}\n\n")
-        f.write(f"## 详细分析\n\n{analysis}\n\n")
+        f.write(f"{analysis_body}\n\n")
     logger.info(f"单论文分析结果已写入 {md_file.absolute()}")
     return md_file
 # utils.py - 工具函数模块
@@ -92,24 +148,28 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
                 
-                chinese_title = ""
-                if analysis and "**中文标题**:" in analysis:
-                    lines = analysis.split('\n')
-                    for line in lines:
-                        if line.startswith("**中文标题**:"):
-                            chinese_title = line.replace("**中文标题**:", "").strip()
-                            break
+                chinese_title = _extract_chinese_title(analysis)
+                analysis_body = _strip_analysis_heading(analysis)
+                from translator import translate_abstract_with_deepseek
+                translation = translate_abstract_with_deepseek(paper, translate_title_only=False, use_cache=True)
+                abstract_translation = _extract_abstract_translation(translation)
+                paper_comment = _get_paper_comment(paper)
                 
                 f.write(f"## {i}. {chinese_title if chinese_title else title}\n\n")
                 if chinese_title:
-                    f.write(f"**{title}**\n\n")
+                    f.write(f"{title}\n\n")
                 
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
                 f.write(f"**arXiv ID**: {paper.get_short_id()}\n\n")
+                if abstract_translation:
+                    f.write(f"**摘要翻译**: {abstract_translation}\n\n")
+                else:
+                    f.write(f"**摘要**: {paper.summary}\n\n")
+                f.write(f"**Comment**: {paper_comment if paper_comment else '无'}\n\n")
                 f.write(f"**链接**: {paper.entry_id}\n\n")
-                f.write(f"### 详细分析\n\n{analysis}\n\n")
+                f.write(f"{analysis_body}\n\n")
                 f.write("---\n\n")
         
         # 写入了解领域的论文（摘要翻译）
