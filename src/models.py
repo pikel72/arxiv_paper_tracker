@@ -22,6 +22,9 @@ class SimplePaper:
 
     def download_pdf(self, filename):
         pdf_url = self.entry_id.replace('/abs/', '/pdf/') + '.pdf'
-        response = requests.get(pdf_url)
+        response = requests.get(pdf_url, stream=True, timeout=30)
+        response.raise_for_status()
         with open(filename, 'wb') as f:
-            f.write(response.content)
+            for chunk in response.iter_content(chunk_size=1024 * 64):
+                if chunk:
+                    f.write(chunk)

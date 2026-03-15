@@ -29,7 +29,7 @@ set /p choice="Enter your choice (1-6): "
 if "%choice%"=="1" goto run_all
 if "%choice%"=="2" goto run_date
 if "%choice%"=="3" goto run_arxiv
-if "%choice%"=="4" goto run_pdf
+if "%choice%"=="4" goto run_local_pdf
 if "%choice%"=="5" goto cache_menu
 if "%choice%"=="6" goto exit_tool
 
@@ -48,9 +48,6 @@ echo Operation completed.
 pause
 goto menu
 
-<<<<<<< Updated upstream
-:run_single
-=======
 :run_date
 echo === Run Analysis for Specific Date ===
 echo Format: YYYYMMDD or YYYYMMDD:YYYYMMDD (range)
@@ -71,7 +68,6 @@ pause
 goto menu
 
 :run_arxiv
->>>>>>> Stashed changes
 echo === Single Paper Analysis (arXiv ID) ===
 set /p arxiv_id="Enter arXiv ID (e.g., 2305.09582): "
 if "%arxiv_id%"=="" (
@@ -90,7 +86,6 @@ echo Operation completed.
 pause
 goto menu
 
-<<<<<<< Updated upstream
 :run_local_pdf
 echo === Local PDF Analysis ===
 if not exist "papers" (
@@ -130,39 +125,21 @@ echo.
 
 set /p pages="Enter number of pages to extract (default 10, or 'all'): "
 if "%pages%"=="" set pages=10
-
-=======
-:run_pdf
-echo === Analyze Local PDF File ===
-set /p pdf_path="Enter PDF file path (e.g., ./papers/test.pdf): "
-if "%pdf_path%"=="" (
-    echo PDF path cannot be empty.
-    pause
-    goto menu
-)
-set /p pages="Enter number of pages to extract (default 10, or 'all'): "
-if "%pages%"=="" set pages=10
->>>>>>> Stashed changes
 if not exist "%PYTHON%" (
     echo Error: Virtual environment not found. Please configure the environment first.
     goto fail
 )
-<<<<<<< Updated upstream
 
 "%PYTHON%" src\main.py --pdf "!selected_pdf!" -p %pages% || goto fail
-=======
-"%PYTHON%" src\main.py --pdf %pdf_path% -p %pages% || goto fail
->>>>>>> Stashed changes
 echo Operation completed.
 pause
 goto menu
 
-<<<<<<< Updated upstream
 :invalid_pdf
 echo Invalid choice, please try again.
 pause
 goto menu
-=======
+
 :cache_menu
 cls
 echo === Cache Management ===
@@ -210,7 +187,6 @@ goto cache_menu
 "%PYTHON%" src\main.py --clear-cache translation
 pause
 goto cache_menu
->>>>>>> Stashed changes
 
 :fail
 echo Operation failed, please check the command output.

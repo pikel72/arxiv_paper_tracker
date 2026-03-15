@@ -250,6 +250,7 @@ def download_paper(paper, output_dir):
     """将论文PDF下载到指定目录，包含重试机制"""
     import time
     import random
+    output_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = output_dir / f"{paper.get_short_id().replace('/', '_')}.pdf"
     
     # 如果已下载则跳过
