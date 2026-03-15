@@ -33,6 +33,11 @@ EMAIL_TO = [email.strip() for email in os.getenv("EMAIL_TO", "").split(",") if e
 
 PAPERS_DIR = Path("./papers")
 RESULTS_DIR = Path("./results")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_DIR = Path(os.getenv("LOG_DIR", "./logs"))
+LOG_FILE = os.getenv("LOG_FILE", "arxiv_tracker.log")
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", "5242880"))
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
 
 # 从环境变量读取配置，如果没有则使用默认值
 CATEGORIES = [cat.strip() for cat in os.getenv("ARXIV_CATEGORIES", "math.AP").split(",") if cat.strip()]

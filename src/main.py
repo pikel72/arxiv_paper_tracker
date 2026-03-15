@@ -7,11 +7,13 @@ import logging
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from logging.handlers import RotatingFileHandler
 
 from config import (
     CATEGORIES, MAX_PAPERS, PAPERS_DIR, RESULTS_DIR,
     PRIORITY_ANALYSIS_DELAY, SECONDARY_ANALYSIS_DELAY,
-    PRIORITY_TOPICS, SECONDARY_TOPICS, MAX_THREADS
+    PRIORITY_TOPICS, SECONDARY_TOPICS, MAX_THREADS,
+    LOG_LEVEL, LOG_DIR, LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT
 )
 from crawler import get_recent_papers
 from analyzer import check_topic_relevance, analyze_paper, extract_pdf_text
@@ -21,11 +23,27 @@ from utils import write_to_conclusion, delete_pdf, download_paper
 
 import requests
 from models import SimplePaper
-
-# 设置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
-                   handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
+
+def configure_logging():
+    log_level_name = (LOG_LEVEL or "INFO").upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+    handlers = [logging.StreamHandler(sys.stdout)]
+    if LOG_DIR and LOG_FILE:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = LOG_DIR / LOG_FILE
+        file_handler = RotatingFileHandler(
+            log_path,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8"
+        )
+        handlers.append(file_handler)
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=handlers
+    )
 
 def process_single_paper_task(paper, index, total):
     """处理单篇论文的任务函数，用于多线程"""
@@ -77,6 +95,7 @@ def process_single_paper_task(paper, index, total):
         return -1, None
 
 def main():
+    configure_logging()
     parser = argparse.ArgumentParser(
         description="ArXiv 论文追踪与分析器",
         formatter_class=argparse.RawDescriptionHelpFormatter,
