@@ -7,12 +7,16 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from jinja2 import Template
 
+from analyzer import extract_analysis_title, render_analysis_body
 from config import (
     SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, 
     EMAIL_FROM, EMAIL_TO, EMAIL_SUBJECT_PREFIX, RESULTS_DIR
 )
 
 logger = logging.getLogger(__name__)
+
+def _extract_translation_title(text: str) -> str:
+    return extract_analysis_title(text, "").strip()
 
 def format_email_content(priority_analyses, secondary_analyses, irrelevant_papers=None):
     """格式化邮件内容，包含三种类型的论文"""
@@ -30,25 +34,18 @@ def format_email_content(priority_analyses, secondary_analyses, irrelevant_paper
         content += "### 🔥 重点关注论文（完整分析）\n\n"
         for i, (paper, analysis) in enumerate(priority_analyses, 1):
             author_names = [author.name for author in paper.authors]
-            
-            # 提取中文标题
-            chinese_title = ""
-            if analysis and "**中文标题**:" in analysis:
-                lines = analysis.split('\n')
-                for line in lines:
-                    if line.startswith("**中文标题**:"):
-                        chinese_title = line.replace("**中文标题**:", "").strip()
-                        break
-            
+            chinese_title = extract_analysis_title(analysis, paper.title)
+            analysis_body = render_analysis_body(analysis)
+
             content += f"#### {i}. {chinese_title if chinese_title else paper.title}\n"
-            if chinese_title:
+            if chinese_title and chinese_title != paper.title:
                 content += f"**{paper.title}**\n\n"
             
             content += f"**作者**: {', '.join(author_names)}\n"
             content += f"**类别**: {', '.join(paper.categories)}\n"
             content += f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n"
             content += f"**链接**: {paper.entry_id}\n\n"
-            content += f"{analysis}\n\n"
+            content += f"{analysis_body}\n\n"
             content += "---\n\n"
     
     # 了解领域论文
@@ -56,16 +53,8 @@ def format_email_content(priority_analyses, secondary_analyses, irrelevant_paper
         content += "### 📖 了解领域论文（摘要翻译）\n\n"
         for i, (paper, translation) in enumerate(secondary_analyses, 1):
             author_names = [author.name for author in paper.authors]
-            
-            # 提取中文标题
-            chinese_title = ""
-            if translation and "**中文标题**:" in translation:
-                lines = translation.split('\n')
-                for line in lines:
-                    if line.startswith("**中文标题**:"):
-                        chinese_title = line.replace("**中文标题**:", "").strip()
-                        break
-            
+            chinese_title = _extract_translation_title(translation)
+
             content += f"#### {i}. {chinese_title if chinese_title else paper.title}\n"
             if chinese_title:
                 content += f"**{paper.title}**\n\n"
@@ -82,16 +71,8 @@ def format_email_content(priority_analyses, secondary_analyses, irrelevant_paper
         content += "### 📋 不相关论文（基本信息）\n\n"
         for i, (paper, reason, title_translation) in enumerate(irrelevant_papers, 1):
             author_names = [author.name for author in paper.authors]
-            
-            # 提取中文标题
-            chinese_title = ""
-            if title_translation and "**中文标题**:" in title_translation:
-                lines = title_translation.split('\n')
-                for line in lines:
-                    if line.startswith("**中文标题**:"):
-                        chinese_title = line.replace("**中文标题**:", "").strip()
-                        break
-            
+            chinese_title = _extract_translation_title(title_translation)
+
             content += f"#### {i}. {chinese_title if chinese_title else paper.title}\n"
             if chinese_title:
                 content += f"**{paper.title}**\n\n"

@@ -16,7 +16,10 @@ from config import (
     LOG_LEVEL, LOG_DIR, LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT
 )
 from crawler import get_recent_papers
-from analyzer import check_topic_relevance, analyze_paper, extract_pdf_text
+from analyzer import (
+    check_topic_relevance, analyze_paper, extract_pdf_text,
+    extract_analysis_title, render_analysis_body
+)
 from translator import translate_abstract_with_deepseek
 from emailer import send_email, format_email_content
 from utils import write_to_conclusion, delete_pdf, download_paper
@@ -356,20 +359,8 @@ def analyze_local_pdf(pdf_path, max_pages=10):
     now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     output_filename = f"pdf_{pdf_path.stem}_{now}.md"
     output_path = RESULTS_DIR / output_filename
-    
-    # 从分析结果中提取标题信息
-    chinese_title = ""
-    english_title = ""
-    authors = ""
-    
-    if analysis:
-        for line in analysis.split('\n'):
-            if line.startswith("**中文标题**:"):
-                chinese_title = line.replace("**中文标题**:", "").strip()
-            elif line.startswith("**英文标题**:"):
-                english_title = line.replace("**英文标题**:", "").strip()
-            elif line.startswith("**作者**:"):
-                authors = line.replace("**作者**:", "").strip()
+    chinese_title = extract_analysis_title(analysis, pdf_path.stem)
+    analysis_body = render_analysis_body(analysis)
     
     # 写入 Markdown 文件
     datetime_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -377,24 +368,14 @@ def analyze_local_pdf(pdf_path, max_pages=10):
     
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(f"---\n")
-        f.write(f"title: \"{chinese_title if chinese_title else pdf_path.stem}\"\n")
+        f.write(f"title: \"{chinese_title}\"\n")
         f.write(f"date: {datetime_str}\n")
         f.write(f"source: local_pdf\n")
-        if authors:
-            f.write(f"description: {authors}\n")
         f.write(f"pdf_file: {pdf_path.name}\n")
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"---\n\n")
-        
-        if chinese_title:
-            f.write(f"# {chinese_title}\n\n")
-        if english_title:
-            f.write(f"**{english_title}**\n\n")
-        if authors:
-            f.write(f"**作者**: {authors}\n\n")
-        
-        f.write(f"---\n\n")
-        f.write(f"## 详细分析\n\n{analysis}\n")
+        f.write(f"# {chinese_title}\n\n")
+        f.write(f"{analysis_body}\n")
     
     end_time = time.time()
     duration = end_time - start_time

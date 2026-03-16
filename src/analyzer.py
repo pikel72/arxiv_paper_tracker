@@ -19,70 +19,92 @@ SECTION_SPECS = [
     ("与之前工作的比较", ["与之前工作的比较", "与已有工作比较", "与先前工作比较", "与相关工作比较", "对比已有工作", "相关工作比较", "对比"]),
 ]
 
-def _extract_sections(raw_text: str):
+def _clean_heading_candidate(line: str):
+    candidate = re.sub(r"^[#\s>*-]+", "", line)
+    candidate = re.sub(r"^\d+\s*[.\、]\s*", "", candidate)
+    candidate = candidate.replace("**", "").replace("__", "").strip()
+    return candidate
+
+def _match_section_heading(line: str):
+    candidate = _clean_heading_candidate(line)
+    if not candidate:
+        return None, ""
+    for canonical, aliases in SECTION_SPECS:
+        for alias in aliases:
+            if candidate == alias:
+                return canonical, ""
+            if candidate.startswith(alias):
+                tail = candidate[len(alias):]
+                if not tail:
+                    return canonical, ""
+                if tail[0] in " :：（(":
+                    return canonical, tail.lstrip(" :：").strip()
+    return None, ""
+
+def extract_analysis_sections(raw_text: str):
     text = (raw_text or "").replace("\r\n", "\n")
     lines = text.split("\n")
-    offsets = []
-    pos = 0
-    for line in lines:
-        offsets.append(pos)
-        pos += len(line) + 1
-
     headings = []
-    for idx, line in enumerate(lines):
-        line_clean = re.sub(r"^[#\s>*-]+", "", line)
-        line_clean = re.sub(r"^\d+\s*[.\、]\s*", "", line_clean)
-        line_clean = line_clean.replace("**", "").replace("__", "")
-        line_clean = re.sub(r"[:：]\s*$", "", line_clean).strip()
-        if not line_clean:
-            continue
-        for canonical, aliases in SECTION_SPECS:
-            if any(alias in line_clean for alias in aliases):
-                headings.append(
-                    {
-                        "canonical": canonical,
-                        "start": offsets[idx] + len(line) + 1,
-                        "line_index": idx,
-                    }
-                )
-                break
-
-    # 只保留每个章节首次出现的位置
     seen = set()
-    unique_headings = []
-    for h in sorted(headings, key=lambda x: x["start"]):
-        if h["canonical"] in seen:
+
+    for idx, line in enumerate(lines):
+        canonical, inline_content = _match_section_heading(line)
+        if canonical is None or canonical in seen:
             continue
-        seen.add(h["canonical"])
-        unique_headings.append(h)
+        seen.add(canonical)
+        headings.append((idx, canonical, inline_content))
 
     sections = {canonical: "" for canonical, _ in SECTION_SPECS}
-    for i, h in enumerate(unique_headings):
-        end = unique_headings[i + 1]["start"] if i + 1 < len(unique_headings) else len(text)
-        content = text[h["start"]:end].strip()
-        sections[h["canonical"]] = content
+    for index, (line_idx, canonical, inline_content) in enumerate(headings):
+        next_idx = headings[index + 1][0] if index + 1 < len(headings) else len(lines)
+        content_lines = []
+        if inline_content:
+            content_lines.append(inline_content)
+        content_lines.extend(lines[line_idx + 1:next_idx])
+        sections[canonical] = "\n".join(content_lines).strip()
 
     return sections
 
-def _extract_zh_title(raw_text: str, fallback: str):
+def extract_analysis_title(raw_text: str, fallback: str):
     text = (raw_text or "").replace("\r\n", "\n")
+    lines = text.split("\n")
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            title = stripped[2:].strip()
+            if title:
+                return title
+
     match = re.search(r"中文标题\s*[:：]\s*(.+)", text)
     if match:
         title = match.group(1).strip()
         if title:
             return title
+
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("## ", "### ", "**作者**", "**类别**", "**摘要**", "论文标题:", "作者:", "类别:", "发布时间:", "摘要:", "论文PDF内容:")):
+            continue
+        next_nonempty = ""
+        for next_line in lines[idx + 1:]:
+            next_nonempty = next_line.strip()
+            if next_nonempty:
+                break
+        if next_nonempty.startswith("## 详细分析"):
+            return stripped.replace("**", "").strip()
+
     return fallback
 
-def normalize_analysis_markdown(raw_text: str, zh_title: str):
-    sections = _extract_sections(raw_text)
+def render_analysis_body(raw_text: str):
+    sections = extract_analysis_sections(raw_text)
 
     def section_or_placeholder(key: str):
         content = (sections.get(key) or "").strip()
         return content if content else "（模型未给出相关内容）"
 
     return (
-        f"# {zh_title}\n\n"
-        "## 详细分析\n\n"
         "### 1. 研究对象和背景\n"
         f"{section_or_placeholder('研究对象和背景')}\n\n"
         "### 2. 主要定理或主要结果\n"
@@ -92,6 +114,9 @@ def normalize_analysis_markdown(raw_text: str, zh_title: str):
         "### 4. 与之前工作的比较\n"
         f"{section_or_placeholder('与之前工作的比较')}\n"
     )
+
+def normalize_analysis_markdown(raw_text: str, zh_title: str):
+    return f"# {zh_title}\n\n## 详细分析\n\n{render_analysis_body(raw_text)}"
 
 def extract_pdf_text(pdf_path, max_pages=10):
     """从PDF文件中提取文本内容"""
@@ -372,7 +397,7 @@ def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True):
         )
         logger.info(f"PDF 分析完成: {pdf_path.name}")
         
-        zh_title = _extract_zh_title(analysis, title)
+        zh_title = extract_analysis_title(analysis, title)
         normalized = normalize_analysis_markdown(analysis, zh_title)
         if use_cache:
             cache_analysis(cache_key, normalized)
