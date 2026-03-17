@@ -75,7 +75,7 @@ def extract_analysis_title(raw_text: str, fallback: str):
             if title:
                 return title
 
-    match = re.search(r"中文标题\s*[:：]\s*(.+)", text)
+    match = re.search(r"\*{0,2}中文标题\*{0,2}\s*[:：]\s*(.+)", text)
     if match:
         title = match.group(1).strip()
         if title:

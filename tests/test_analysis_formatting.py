@@ -56,7 +56,17 @@ def test_extract_and_render_plain_title_style():
     assert "（模型未给出相关内容）" in rendered
 
 
+def test_extract_bold_translation_title():
+    sample = """**中文标题**: 广义表面准地转方程解映射规律性分析
+
+**摘要翻译**: 摘要内容
+"""
+
+    assert extract_analysis_title(sample, "fallback") == "广义表面准地转方程解映射规律性分析"
+
+
 if __name__ == "__main__":
     test_extract_and_render_old_heading_style()
     test_extract_and_render_plain_title_style()
+    test_extract_bold_translation_title()
     print("analysis formatting tests passed")
