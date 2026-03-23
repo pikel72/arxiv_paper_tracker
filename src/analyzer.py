@@ -193,6 +193,7 @@ def check_topic_relevance(paper):
                 {"role": "user", "content": prompt},
             ]
         )
+        result = (result or "").strip()
         logger.info(f"主题相关性检查结果: {result}")
         
         # 判断优先级
