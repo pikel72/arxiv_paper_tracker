@@ -1,15 +1,50 @@
 # crawler.py - 爬取论文模块
 
 import datetime
-import requests
 import feedparser
 import logging
+import time
 from typing import Optional, Tuple
+
+import requests
 
 from config import SEARCH_DAYS, MAX_PAPERS
 from models import SimplePaper
 
 logger = logging.getLogger(__name__)
+
+
+def _fetch_arxiv_response(url: str, max_retries: int = 4, timeout: int = 30):
+    backoff = 2
+    last_status = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.get(url, timeout=timeout)
+            if response.status_code == 200:
+                return response
+
+            last_status = response.status_code
+            if response.status_code in {429, 500, 502, 503, 504} and attempt < max_retries:
+                logger.warning(f"arXiv 暂时不可用，状态码: {response.status_code}，第 {attempt}/{max_retries} 次重试")
+                time.sleep(backoff)
+                backoff *= 2
+                continue
+
+            logger.error(f"Failed to fetch data from arXiv, status: {response.status_code}")
+            return None
+        except requests.RequestException as e:
+            if attempt < max_retries:
+                logger.warning(f"请求 arXiv 失败: {str(e)}，第 {attempt}/{max_retries} 次重试")
+                time.sleep(backoff)
+                backoff *= 2
+                continue
+            logger.error(f"请求 arXiv 最终失败: {str(e)}")
+            return None
+
+    if last_status is not None:
+        logger.error(f"Failed to fetch data from arXiv, status: {last_status}")
+    return None
 
 
 def parse_date_arg(date_str: str) -> Tuple[datetime.datetime, datetime.datetime]:
@@ -115,9 +150,8 @@ def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[
     logger.info(f"最大论文数: {max_results}")
     
     # 发送请求
-    response = requests.get(url)
-    if response.status_code != 200:
-        logger.error(f"Failed to fetch data from arXiv, status: {response.status_code}")
+    response = _fetch_arxiv_response(url)
+    if response is None:
         return []
     
     # 解析XML

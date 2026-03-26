@@ -16,6 +16,8 @@ class SimplePaper:
         self.categories = [tag.term for tag in entry.tags]
         self.entry_id = entry.id
         self.summary = entry.summary
+        self.comment = getattr(entry, "arxiv_comment", None) or getattr(entry, "comment", None) or getattr(entry, "comments", None) or ""
+        self.arxiv_comment = self.comment
 
     def get_short_id(self):
         return self.entry_id.split('/')[-1]

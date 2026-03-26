@@ -20,7 +20,7 @@ def _extract_abstract_translation(text: str) -> str:
     return ""
 
 def _get_paper_comment(paper) -> str:
-    comment = getattr(paper, "comment", None) or getattr(paper, "comments", None)
+    comment = getattr(paper, "comment", None) or getattr(paper, "comments", None) or getattr(paper, "arxiv_comment", None)
     if comment:
         return str(comment).strip()
     return ""
