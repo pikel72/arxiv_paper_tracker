@@ -4,6 +4,8 @@ setlocal enabledelayedexpansion
 set "ROOT=%~dp0"
 set "VENV=%ROOT%.venv"
 set "PYTHON=%VENV%\Scripts\python.exe"
+set "THINKING_MODE=0"
+set "THINKING_TEXT=OFF"
 
 cd /d "%ROOT%" || (
     echo Unable to switch to project directory %ROOT%
@@ -22,18 +24,33 @@ echo 2. Run analysis for specific date
 echo 3. Analyze single paper (arXiv ID)
 echo 4. Analyze local PDF file
 echo 5. Cache management
-echo 6. Exit
+echo 6. Toggle thinking mode [%THINKING_TEXT%]
+echo 7. Exit
 echo.
-set /p choice="Enter your choice (1-6): "
+set /p choice="Enter your choice (1-7): "
 
 if "%choice%"=="1" goto run_all
 if "%choice%"=="2" goto run_date
 if "%choice%"=="3" goto run_arxiv
 if "%choice%"=="4" goto run_local_pdf
 if "%choice%"=="5" goto cache_menu
-if "%choice%"=="6" goto exit_tool
+if "%choice%"=="6" goto toggle_thinking
+if "%choice%"=="7" goto exit_tool
 
 echo Invalid choice, please try again.
+pause
+goto menu
+
+:toggle_thinking
+if "%THINKING_MODE%"=="0" (
+    set "THINKING_MODE=1"
+    set "THINKING_TEXT=ON"
+    echo Thinking mode ENABLED - AI will perform deeper analysis.
+) else (
+    set "THINKING_MODE=0"
+    set "THINKING_TEXT=OFF"
+    echo Thinking mode DISABLED - Standard analysis mode.
+)
 pause
 goto menu
 
@@ -69,6 +86,7 @@ goto menu
 
 :run_arxiv
 echo === Single Paper Analysis (arXiv ID) ===
+echo Thinking mode: %THINKING_TEXT%
 set /p arxiv_id="Enter arXiv ID (e.g., 2305.09582): "
 if "%arxiv_id%"=="" (
     echo arXiv ID cannot be empty.
@@ -81,13 +99,18 @@ if not exist "%PYTHON%" (
     echo Error: Virtual environment not found. Please configure the environment first.
     goto fail
 )
-"%PYTHON%" src\main.py --arxiv %arxiv_id% -p %pages% || goto fail
+if "%THINKING_MODE%"=="1" (
+    "%PYTHON%" src\main.py --arxiv %arxiv_id% -p %pages% --thinking || goto fail
+) else (
+    "%PYTHON%" src\main.py --arxiv %arxiv_id% -p %pages% || goto fail
+)
 echo Operation completed.
 pause
 goto menu
 
 :run_local_pdf
 echo === Local PDF Analysis ===
+echo Thinking mode: %THINKING_TEXT%
 if not exist "papers" (
     echo Papers folder not found. Creating 'papers' folder...
     mkdir papers
@@ -130,7 +153,11 @@ if not exist "%PYTHON%" (
     goto fail
 )
 
-"%PYTHON%" src\main.py --pdf "!selected_pdf!" -p %pages% || goto fail
+if "%THINKING_MODE%"=="1" (
+    "%PYTHON%" src\main.py --pdf "!selected_pdf!" -p %pages% --thinking || goto fail
+) else (
+    "%PYTHON%" src\main.py --pdf "!selected_pdf!" -p %pages% || goto fail
+)
 echo Operation completed.
 pause
 goto menu

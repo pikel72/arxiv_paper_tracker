@@ -218,28 +218,35 @@ def check_topic_relevance(paper):
         # 出错时默认为优先级2，避免遗漏
         return 2, f"检查出错，默认处理: {str(e)}"
 
-def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True):
-    """分析论文内容，支持多种AI分析后端"""
+THINKING_MODE_PROMPT_PREFIX = """
+请进行深度的逐步推理和批判性思考。
+
+"""
+
+def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=False):
+    """分析论文内容，支持多种AI分析后端
+    
+    Args:
+        thinking_mode: 标记是否为思考模式（用户需自行配置推理模型如 deepseek-reasoner）
+    
+    Returns:
+        tuple: (normalized_markdown, usage_dict)
+    """
     arxiv_id = paper.get_short_id()
     
     if use_cache:
         cached = get_cached_analysis(arxiv_id)
         if cached is not None:
             logger.info(f"[缓存命中] 分析结果: {paper.title}")
-            return cached
+            return cached, {}
     
     try:
-        # 从Author对象中提取作者名
         author_names = [author.name for author in paper.authors]
-
-        # 提取PDF文本内容
         pdf_content = extract_pdf_text(pdf_path, max_pages=max_pages)
 
-        # 获取高质量中文标题翻译
         from translator import translate_abstract_with_deepseek
         zh_title_raw = translate_abstract_with_deepseek(paper, translate_title_only=True, use_cache=use_cache)
         
-        # 提取纯中文标题用于日志
         zh_title_clean = paper.title
         if "**中文标题**:" in zh_title_raw:
             for line in zh_title_raw.split('\n'):
@@ -247,7 +254,7 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True):
                     zh_title_clean = line.replace("**中文标题**:", "").strip()
                     break
 
-        prompt = fr"""
+        base_prompt = fr"""
 【重要】请使用中文回答，并以Markdown格式输出。
 
 ## 标题层级结构（必须严格遵循）
@@ -293,26 +300,35 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True):
 
 请严格按照上述标题结构输出分析内容。
 """
+        
+        if thinking_mode:
+            prompt = THINKING_MODE_PROMPT_PREFIX + base_prompt
+        else:
+            prompt = base_prompt
 
-        logger.info(f"正在分析论文: {zh_title_clean}")
-        analysis = ai_client.chat_completion(
+        mode_str = " (深度思考模式)" if thinking_mode else ""
+        logger.info(f"正在分析论文{mode_str}: {zh_title_clean}")
+        analysis, usage = ai_client.chat_completion_with_usage(
             messages=[
                 {"role": "system", "content": "你是一位专门总结和分析学术论文的研究助手。请使用中文回复。"},
                 {"role": "user", "content": prompt},
-            ]
+            ],
+            thinking_mode=thinking_mode
         )
         logger.info(f"论文分析完成: {paper.title}")
+        if usage:
+            logger.info(f"Token用量: 输入={usage.get('prompt_tokens', 0)}, 输出={usage.get('completion_tokens', 0)}, 总计={usage.get('total_tokens', 0)}")
         
         normalized = normalize_analysis_markdown(analysis, zh_title_clean)
         if use_cache:
             cache_analysis(arxiv_id, normalized)
-        return normalized
+        return normalized, usage
     except Exception as e:
         logger.error(f"分析论文失败 {paper.title}: {str(e)}")
-        return f"**论文分析出错**: {str(e)}"
+        return f"**论文分析出错**: {str(e)}", {}
 
 
-def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True):
+def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, thinking_mode=False):
     """
     纯 PDF 分析函数，不依赖 arXiv 元数据
     
@@ -320,33 +336,32 @@ def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True):
         pdf_path: PDF 文件路径
         max_pages: 最大提取页数，None 表示全部
         title: 可选的论文标题，如果不提供则从 PDF 文件名推断
+        thinking_mode: 是否启用深度思考模式
     
     Returns:
-        分析结果字符串
+        tuple: (分析结果字符串, usage_dict)
     """
     from pathlib import Path
     
     pdf_path = Path(pdf_path)
     if not pdf_path.exists():
         logger.error(f"PDF 文件不存在: {pdf_path}")
-        return f"**错误**: PDF 文件不存在: {pdf_path}"
+        return f"**错误**: PDF 文件不存在: {pdf_path}", {}
     
     if use_cache:
         cache_key = pdf_path.stem
         cached = get_cached_analysis(cache_key)
         if cached is not None:
             logger.info(f"[缓存命中] 分析结果: {pdf_path.name}")
-            return cached
+            return cached, {}
     
     try:
-        # 提取 PDF 文本内容
         pdf_content = extract_pdf_text(str(pdf_path), max_pages=max_pages)
         
-        # 如果没有提供标题，从文件名推断
         if not title:
             title = pdf_path.stem.replace('_', ' ').replace('-', ' ')
         
-        prompt = fr"""
+        base_prompt = fr"""
 【重要】请使用中文回答，并以Markdown格式输出。
 
 ## 标题层级结构（必须严格遵循）
@@ -389,21 +404,30 @@ def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True):
 请严格按照上述标题结构输出分析内容。
 """
 
-        logger.info(f"正在分析 PDF: {pdf_path.name}")
-        analysis = ai_client.chat_completion(
+        if thinking_mode:
+            prompt = THINKING_MODE_PROMPT_PREFIX + base_prompt
+        else:
+            prompt = base_prompt
+
+        mode_str = " (深度思考模式)" if thinking_mode else ""
+        logger.info(f"正在分析 PDF{mode_str}: {pdf_path.name}")
+        analysis, usage = ai_client.chat_completion_with_usage(
             messages=[
                 {"role": "system", "content": "你是一位专门总结和分析学术论文的研究助手。请使用中文回复。"},
                 {"role": "user", "content": prompt},
-            ]
+            ],
+            thinking_mode=thinking_mode
         )
         logger.info(f"PDF 分析完成: {pdf_path.name}")
+        if usage:
+            logger.info(f"Token用量: 输入={usage.get('prompt_tokens', 0)}, 输出={usage.get('completion_tokens', 0)}, 总计={usage.get('total_tokens', 0)}")
         
         zh_title = extract_analysis_title(analysis, title)
         normalized = normalize_analysis_markdown(analysis, zh_title)
         if use_cache:
             cache_analysis(cache_key, normalized)
-        return normalized
+        return normalized, usage
         
     except Exception as e:
         logger.error(f"分析 PDF 失败 {pdf_path}: {str(e)}")
-        return f"**PDF 分析出错**: {str(e)}"
+        return f"**PDF 分析出错**: {str(e)}", {}

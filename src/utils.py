@@ -31,7 +31,7 @@ def _strip_analysis_heading(text: str) -> str:
 def _resolve_priority_title(title: str, analysis: str, translation: str) -> str:
     return _extract_chinese_title(translation) or _extract_chinese_title(analysis) or title
 
-def write_single_analysis(paper, analysis, filename: str = None):
+def write_single_analysis(paper, analysis, filename: str = None, usage: dict = None, thinking_mode: bool = False):
     """将单论文分析结果写入 Markdown 文件，结构更简洁。"""
     import re
     today = datetime.datetime.now()
@@ -52,6 +52,7 @@ def write_single_analysis(paper, analysis, filename: str = None):
     paper_comment = _get_paper_comment(paper)
     datetime_str = today.strftime('%Y-%m-%d %H:%M:%S')
     from config import AI_MODEL
+    
     with open(md_file, 'w', encoding='utf-8') as f:
         f.write(f"---\n")
         f.write(f"title: \"{chinese_title if chinese_title else title}\"\n")
@@ -59,6 +60,12 @@ def write_single_analysis(paper, analysis, filename: str = None):
         f.write(f"description: {', '.join(author_names)}\n")
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"arxiv_id: {paper.get_short_id()}\n")
+        f.write(f"thinking_mode: {thinking_mode}\n")
+        if usage:
+            f.write(f"token_usage:\n")
+            f.write(f"  prompt_tokens: {usage.get('prompt_tokens', 0)}\n")
+            f.write(f"  completion_tokens: {usage.get('completion_tokens', 0)}\n")
+            f.write(f"  total_tokens: {usage.get('total_tokens', 0)}\n")
         f.write(f"---\n")
         f.write(f"# {chinese_title if chinese_title else title}\n")
         if chinese_title != title:

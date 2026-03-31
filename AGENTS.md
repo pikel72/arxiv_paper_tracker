@@ -46,12 +46,12 @@ main.py → crawler.py (获取论文) → analyzer.py (AI 主题判断)
 
 | 模块 | 主要类/函数 | 作用 | 导入位置 |
 |------|------------|------|----------|
-| **config.py** | `AIClient` | 统一 8 种 AI 提供商接口，内置重试 | 所有模块 |
+| **config.py** | `AIClient` | 统一 8 种 AI 提供商接口，内置重试，支持用量统计 | 所有模块 |
 | **crawler.py** | `get_recent_papers()` | 获取 ArXiv 论文列表，支持日期范围 | main.py |
-| **analyzer.py** | `analyze_paper()`, `check_topic_relevance()` | PDF 提取 + AI 分析 + 主题判断 | main.py |
+| **analyzer.py** | `analyze_paper()`, `check_topic_relevance()` | PDF 提取 + AI 分析 + 主题判断，支持深度思考模式 | main.py |
 | **translator.py** | `translate_abstract_with_deepseek()` | 翻译摘要/标题 | main.py |
 | **emailer.py** | `send_email()`, `format_email_content()` | SMTP 邮件发送 | main.py |
-| **utils.py** | `write_to_conclusion()`, `download_paper()` | 文件操作 | main.py, analyzer.py |
+| **utils.py** | `write_to_conclusion()`, `download_paper()` | 文件操作，支持 token 用量元数据 | main.py, analyzer.py |
 | **cache.py** | `get_cache()`, `set_cache()` | 文件缓存 (papers/classification/analysis/translation) | analyzer.py, translator.py |
 | **models.py** | `SimplePaper` | 论文数据结构 | crawler.py |
 
@@ -101,8 +101,14 @@ python src/main.py --arxiv 2401.12345
 python src/main.py --arxiv 2401.12345 -p 20
 python src/main.py --arxiv 2401.12345 -p all
 
+# 单论文分析（深度思考模式）
+python src/main.py --arxiv 2401.12345 --thinking
+
 # 本地 PDF 分析
 python src/main.py --pdf ./papers/paper.pdf
+
+# 本地 PDF 分析（深度思考模式）
+python src/main.py --pdf ./papers/paper.pdf --thinking
 ```
 
 **缓存管理**：

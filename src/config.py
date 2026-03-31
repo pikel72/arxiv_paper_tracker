@@ -21,8 +21,8 @@ SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
 CUSTOM_API_BASE = os.getenv("CUSTOM_API_BASE")
 CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
 # AI模型配置
-AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")  # 支持: deepseek, openai, glm, custom, openrouter, siliconflow
-AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")  # 模型名称
+AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")
+AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
@@ -131,8 +131,25 @@ class AIClient:
         else:
             raise ValueError(f"不支持的AI提供商: {self.provider}")
     
-    def chat_completion(self, messages, **kwargs):
-        """统一的聊天完成接口，包含失败重试机制"""
+    def chat_completion(self, messages, thinking_mode=False, **kwargs):
+        """统一的聊天完成接口，包含失败重试机制
+        
+        Args:
+            thinking_mode: 标记是否为思考模式（用于日志和元数据，用户需自行配置推理模型）
+        """
+        content, _ = self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)
+        return content
+    
+    def chat_completion_with_usage(self, messages, thinking_mode=False, **kwargs):
+        """统一的聊天完成接口，返回内容和用量统计
+        
+        Args:
+            thinking_mode: 标记是否为思考模式（用于日志和元数据，用户需自行配置推理模型）
+        """
+        return self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)
+    
+    def _do_chat_completion(self, messages, thinking_mode=False, **kwargs):
+        """内部实现：统一的聊天完成接口，包含失败重试机制"""
         import time
         import random
         
@@ -146,16 +163,23 @@ class AIClient:
                     messages=messages,
                     **kwargs
                 )
-                return response.choices[0].message.content
+                content = response.choices[0].message.content
+                usage = {}
+                if hasattr(response, 'usage') and response.usage:
+                    usage = {
+                        "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
+                        "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
+                        "total_tokens": getattr(response.usage, 'total_tokens', 0),
+                    }
+                return content, usage
             except Exception as e:
                 error_msg = str(e).lower()
-                # 检查是否是频率限制错误
                 is_rate_limit = any(keyword in error_msg for keyword in ["rate limit", "too many requests", "429"])
                 
                 if attempt < max_retries - 1:
                     wait_time = (backoff_factor ** attempt) + random.uniform(0, 1)
                     if is_rate_limit:
-                        wait_time += 5  # 频率限制时额外多等一会儿
+                        wait_time += 5
                     
                     import logging
                     logger = logging.getLogger(__name__)
