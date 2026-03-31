@@ -1,13 +1,14 @@
 # config.py - 配置文件
 
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
-# 加载环境变量
 load_dotenv()
 
-# 配置
+logger = logging.getLogger(__name__)
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GLM_API_KEY = os.getenv("GLM_API_KEY")
@@ -20,7 +21,6 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
 CUSTOM_API_BASE = os.getenv("CUSTOM_API_BASE")
 CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
-# AI模型配置
 AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")
 AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -28,7 +28,6 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 EMAIL_FROM = os.getenv("EMAIL_FROM")
-# 支持多个收件人邮箱，用逗号分隔
 EMAIL_TO = [email.strip() for email in os.getenv("EMAIL_TO", "").split(",") if email.strip()]
 
 PAPERS_DIR = Path("./papers")
@@ -39,12 +38,10 @@ LOG_FILE = os.getenv("LOG_FILE", "arxiv_tracker.log")
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", "5242880"))
 LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
 
-# 从环境变量读取配置，如果没有则使用默认值
 CATEGORIES = [cat.strip() for cat in os.getenv("ARXIV_CATEGORIES", "math.AP").split(",") if cat.strip()]
 MAX_PAPERS = int(os.getenv("MAX_PAPERS", "50"))
 SEARCH_DAYS = int(os.getenv("SEARCH_DAYS", "3"))
 
-# 主题过滤列表从环境变量读取
 default_priority_topics = [
     "流体力学中偏微分方程的数学理论",
     "Navier-Stokes方程",
@@ -63,89 +60,91 @@ default_secondary_topics = [
     "抛物偏微分方程"
 ]
 
-# 从环境变量读取主题列表，使用 | 分隔
 PRIORITY_TOPICS = os.getenv("PRIORITY_TOPICS", "|".join(default_priority_topics)).split("|")
 SECONDARY_TOPICS = os.getenv("SECONDARY_TOPICS", "|".join(default_secondary_topics)).split("|")
 
-# API调用延时配置
-PRIORITY_ANALYSIS_DELAY = int(os.getenv("PRIORITY_ANALYSIS_DELAY", "3"))  # 重点论文分析延时（秒）
-SECONDARY_ANALYSIS_DELAY = int(os.getenv("SECONDARY_ANALYSIS_DELAY", "2"))  # 摘要翻译延时（秒）
-MAX_THREADS = int(os.getenv("MAX_THREADS", "5"))  # 最大线程数
+PRIORITY_ANALYSIS_DELAY = int(os.getenv("PRIORITY_ANALYSIS_DELAY", "3"))
+SECONDARY_ANALYSIS_DELAY = int(os.getenv("SECONDARY_ANALYSIS_DELAY", "2"))
+MAX_THREADS = int(os.getenv("MAX_THREADS", "5"))
 
-# 邮件配置
 EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX", "ArXiv论文分析报告")
+
+PROVIDER_CONFIG = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key": DEEPSEEK_API_KEY,
+        "thinking_support": "native",
+    },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": OPENAI_API_KEY,
+        "thinking_support": "native",
+    },
+    "glm": {
+        "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+        "api_key": GLM_API_KEY,
+        "thinking_support": "none",
+    },
+    "qwen": {
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_key": QWEN_API_KEY,
+        "thinking_support": "enable_thinking",
+    },
+    "doubao": {
+        "base_url": DOUBAO_API_BASE or "https://ark.cn-beijing.volces.com/api/v3",
+        "api_key": DOUBAO_API_KEY,
+        "thinking_support": "none",
+    },
+    "kimi": {
+        "base_url": KIMI_API_BASE or "https://api.moonshot.cn/v1",
+        "api_key": KIMI_API_KEY,
+        "thinking_support": "native",
+    },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": OPENROUTER_API_KEY,
+        "thinking_support": "none",
+    },
+    "siliconflow": {
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": SILICONFLOW_API_KEY,
+        "thinking_support": "none",
+    },
+    "custom": {
+        "base_url": CUSTOM_API_BASE,
+        "api_key": CUSTOM_API_KEY,
+        "thinking_support": "none",
+    },
+}
 
 
 class AIClient:
-    """通用AI客户端，支持多个AI提供商"""
+    """通用AI客户端，支持多个AI提供商和 thinking mode"""
     
     def __init__(self, provider=None, model=None):
+        from openai import OpenAI
+        
         self.provider = provider or AI_PROVIDER
         self.model = model or AI_MODEL
         
-        if self.provider == "deepseek":
-            import openai
-            openai.api_key = DEEPSEEK_API_KEY
-            openai.api_base = "https://api.deepseek.com/v1"
-            self.client = openai
-        elif self.provider == "openai":
-            import openai
-            openai.api_key = OPENAI_API_KEY
-            openai.api_base = "https://api.openai.com/v1"
-            self.client = openai
-        elif self.provider == "glm":
-            import openai
-            openai.api_key = GLM_API_KEY
-            openai.api_base = "https://open.bigmodel.cn/api/paas/v4/"
-            self.client = openai
-        elif self.provider == "qwen":
-            import openai
-            openai.api_key = QWEN_API_KEY
-            openai.api_base = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-            self.client = openai
-        elif self.provider == "doubao":
-            import openai
-            openai.api_key = DOUBAO_API_KEY
-            openai.api_base = DOUBAO_API_BASE or "https://ark.cn-beijing.volces.com/api/v3"
-            self.client = openai
-        elif self.provider == "kimi":
-            import openai
-            openai.api_key = KIMI_API_KEY
-            openai.api_base = KIMI_API_BASE or "https://api.moonshot.cn/v1"
-            self.client = openai
-        elif self.provider == "openrouter":
-            import openai
-            openai.api_key = OPENROUTER_API_KEY
-            openai.api_base = "https://openrouter.ai/api/v1"
-            self.client = openai
-        elif self.provider == "siliconflow":
-            import openai
-            openai.api_key = SILICONFLOW_API_KEY
-            openai.api_base = "https://api.siliconflow.cn/v1"
-            self.client = openai
-        elif self.provider == "custom":
-            import openai
-            openai.api_key = CUSTOM_API_KEY
-            openai.api_base = CUSTOM_API_BASE
-            self.client = openai
-        else:
+        if self.provider not in PROVIDER_CONFIG:
             raise ValueError(f"不支持的AI提供商: {self.provider}")
+        
+        config = PROVIDER_CONFIG[self.provider]
+        self.thinking_support = config["thinking_support"]
+        
+        self.client = OpenAI(
+            api_key=config["api_key"],
+            base_url=config["base_url"],
+        )
     
     def chat_completion(self, messages, thinking_mode=False, **kwargs):
-        """统一的聊天完成接口，包含失败重试机制
-        
-        Args:
-            thinking_mode: 标记是否为思考模式（用于日志和元数据，用户需自行配置推理模型）
-        """
+        """统一的聊天完成接口，包含失败重试机制"""
         content, _ = self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)
         return content
     
     def chat_completion_with_usage(self, messages, thinking_mode=False, **kwargs):
-        """统一的聊天完成接口，返回内容和用量统计
-        
-        Args:
-            thinking_mode: 标记是否为思考模式（用于日志和元数据，用户需自行配置推理模型）
-        """
+        """统一的聊天完成接口，返回内容和用量统计"""
         return self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)
     
     def _do_chat_completion(self, messages, thinking_mode=False, **kwargs):
@@ -156,20 +155,35 @@ class AIClient:
         max_retries = 3
         backoff_factor = 2
         
+        extra_body = kwargs.pop("extra_body", None) or {}
+        
+        if thinking_mode and self.thinking_support == "enable_thinking":
+            extra_body["enable_thinking"] = True
+            logger.info(f"启用 thinking mode (enable_thinking=True) for {self.provider}")
+        elif thinking_mode and self.thinking_support == "native":
+            logger.info(f"启用 thinking mode (native) for {self.provider}/{self.model}")
+        elif thinking_mode:
+            logger.warning(f"提供商 {self.provider} 不支持 thinking mode，将使用普通模式")
+        
         for attempt in range(max_retries):
             try:
-                response = self.client.ChatCompletion.create(
-                    model=self.model,
-                    messages=messages,
+                create_kwargs = {
+                    "model": self.model,
+                    "messages": messages,
                     **kwargs
-                )
+                }
+                if extra_body:
+                    create_kwargs["extra_body"] = extra_body
+                
+                response = self.client.chat.completions.create(**create_kwargs)
+                
                 content = response.choices[0].message.content
                 usage = {}
-                if hasattr(response, 'usage') and response.usage:
+                if response.usage:
                     usage = {
-                        "prompt_tokens": getattr(response.usage, 'prompt_tokens', 0),
-                        "completion_tokens": getattr(response.usage, 'completion_tokens', 0),
-                        "total_tokens": getattr(response.usage, 'total_tokens', 0),
+                        "prompt_tokens": response.usage.prompt_tokens or 0,
+                        "completion_tokens": response.usage.completion_tokens or 0,
+                        "total_tokens": response.usage.total_tokens or 0,
                     }
                 return content, usage
             except Exception as e:
@@ -181,13 +195,10 @@ class AIClient:
                     if is_rate_limit:
                         wait_time += 5
                     
-                    import logging
-                    logger = logging.getLogger(__name__)
                     logger.warning(f"AI API调用失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}。将在 {wait_time:.1f}s 后重试...")
                     time.sleep(wait_time)
                 else:
                     raise Exception(f"AI API调用在 {max_retries} 次尝试后仍然失败 ({self.provider}): {str(e)}")
 
 
-# 创建全局AI客户端实例
 ai_client = AIClient(AI_PROVIDER, AI_MODEL)
