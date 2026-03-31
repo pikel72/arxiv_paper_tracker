@@ -3,13 +3,24 @@ setlocal enabledelayedexpansion
 
 set "ROOT=%~dp0"
 set "VENV=%ROOT%.venv"
-set "PYTHON=%VENV%\Scripts\python.exe"
 set "THINKING_MODE=0"
 set "THINKING_TEXT=OFF"
 
 cd /d "%ROOT%" || (
     echo Unable to switch to project directory %ROOT%
     exit /b 1
+)
+
+if exist "%VENV%\Scripts\python.exe" (
+    set "PYTHON=%VENV%\Scripts\python.exe"
+) else (
+    where python >nul 2>&1
+    if errorlevel 1 (
+        echo Error: Python not found in PATH or virtual environment.
+        echo Please install Python or create a virtual environment at .venv
+        exit /b 1
+    )
+    set "PYTHON=python"
 )
 
 :menu
@@ -56,10 +67,6 @@ goto menu
 
 :run_all
 echo === Running Full Analysis (Auto Date) ===
-if not exist "%PYTHON%" (
-    echo Error: Virtual environment not found. Please configure the environment first.
-    goto fail
-)
 "%PYTHON%" src\main.py || goto fail
 echo Operation completed.
 pause
@@ -74,10 +81,6 @@ if "%date_input%"=="" (
     echo Date cannot be empty.
     pause
     goto menu
-)
-if not exist "%PYTHON%" (
-    echo Error: Virtual environment not found. Please configure the environment first.
-    goto fail
 )
 "%PYTHON%" src\main.py --date %date_input% || goto fail
 echo Operation completed.
@@ -95,10 +98,6 @@ if "%arxiv_id%"=="" (
 )
 set /p pages="Enter number of pages to extract (default 10, or 'all'): "
 if "%pages%"=="" set pages=10
-if not exist "%PYTHON%" (
-    echo Error: Virtual environment not found. Please configure the environment first.
-    goto fail
-)
 if "%THINKING_MODE%"=="1" (
     "%PYTHON%" src\main.py --arxiv %arxiv_id% -p %pages% --thinking || goto fail
 ) else (
@@ -148,10 +147,6 @@ echo.
 
 set /p pages="Enter number of pages to extract (default 10, or 'all'): "
 if "%pages%"=="" set pages=10
-if not exist "%PYTHON%" (
-    echo Error: Virtual environment not found. Please configure the environment first.
-    goto fail
-)
 
 if "%THINKING_MODE%"=="1" (
     "%PYTHON%" src\main.py --pdf "!selected_pdf!" -p %pages% --thinking || goto fail
