@@ -388,6 +388,16 @@ def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=False):
             f.write(f"fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
             f.write(f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
             f.write(f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
+            f.write(f"cleanup_requested: {bool(analysis_meta.get('cleanup_requested'))}\n")
+            f.write(f"cleanup_attempted: {bool(analysis_meta.get('cleanup_attempted'))}\n")
+            f.write(f"cleanup_applied: {bool(analysis_meta.get('cleanup_applied'))}\n")
+            if analysis_meta.get("cleanup_provider"):
+                f.write(f"cleanup_provider: {analysis_meta.get('cleanup_provider')}\n")
+            if analysis_meta.get("cleanup_effective_model"):
+                f.write(f"cleanup_effective_model: {analysis_meta.get('cleanup_effective_model')}\n")
+            f.write(f"cleanup_thinking_applied: {bool(analysis_meta.get('cleanup_thinking_applied'))}\n")
+            f.write(f"cleanup_reasoning_content_present: {bool(analysis_meta.get('cleanup_reasoning_content_present'))}\n")
+            f.write(f"cleanup_structured_validated: {bool(analysis_meta.get('cleanup_structured_validated'))}\n")
             f.write(f"from_cache: {bool(analysis_meta.get('from_cache'))}\n")
         if usage:
             f.write(f"token_usage:\n")
@@ -398,15 +408,6 @@ def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=False):
                 f.write(f"  reasoning_tokens: {usage.get('reasoning_tokens', 0)}\n")
         f.write(f"---\n\n")
         f.write(f"# {chinese_title}\n\n")
-        if analysis_meta:
-            f.write(
-                f"**分析审计**: provider={analysis_meta.get('provider', 'unknown')}, "
-                f"model={analysis_meta.get('effective_model', AI_MODEL)}, "
-                f"thinking={bool(analysis_meta.get('thinking_applied'))}, "
-                f"fallback={bool(analysis_meta.get('fallback_used'))}, "
-                f"reasoning_content={bool(analysis_meta.get('reasoning_content_present'))}, "
-                f"structured={bool(analysis_meta.get('structured_output_validated'))}\n\n"
-            )
         f.write(f"{analysis_body}\n")
     
     end_time = time.time()

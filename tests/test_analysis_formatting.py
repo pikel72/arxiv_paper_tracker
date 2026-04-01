@@ -5,7 +5,13 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from analyzer import StructuredPaperAnalysis, extract_analysis_title, render_analysis_body, render_structured_analysis_markdown
+from analyzer import (
+    StructuredPaperAnalysis,
+    extract_analysis_title,
+    render_analysis_body,
+    render_structured_analysis_markdown,
+    validate_analysis_markdown,
+)
 
 
 def test_extract_and_render_old_heading_style():
@@ -81,9 +87,43 @@ def test_render_structured_analysis_markdown():
     assert "比较段落" in rendered
 
 
+def test_render_structured_analysis_preserves_subparagraphs():
+    structured = StructuredPaperAnalysis(
+        chinese_title="中文标题",
+        research_background="研究对象满足 $\\boldsymbol{u}$ 与 $\\boldsymbol{\\nabla}\\times \\boldsymbol{u}=w\\boldsymbol{e}_\\theta$。",
+        main_results="第一段。\n\n第二段。",
+        methods_and_tools="1. 第一种技术路径：先做局部化。\n\n2. 第二种技术路径：再做闭合估计。",
+        comparison_with_previous_work="与前人工作相比，假设更弱。",
+    )
+
+    rendered = render_structured_analysis_markdown(structured)
+    assert "$\\boldsymbol{u}$" in rendered
+    assert "$\\boldsymbol{\\nabla}\\times \\boldsymbol{u}=w\\boldsymbol{e}_\\theta$" in rendered
+    assert "第一段。\n\n第二段。" in rendered
+    assert "### 3. 研究方法、关键技术和核心工具\n1. 第一种技术路径" in rendered
+    assert "\n\n2. 第二种技术路径" in rendered
+
+
+def test_validate_analysis_markdown_flags_literal_display_math_escapes():
+    rendered = (
+        "# 中文标题\n\n"
+        "## 详细分析\n\n"
+        "### 1. 研究对象和背景\n"
+        "$$\\nE(w)=1\n$$\n\n"
+        "### 2. 主要定理或主要结果\n结果\n\n"
+        "### 3. 研究方法、关键技术和核心工具\n方法\n\n"
+        "### 4. 与之前工作的比较\n比较\n"
+    )
+
+    issues = validate_analysis_markdown(rendered)
+    assert "存在非法块公式转义: $$\\n" in issues
+
+
 if __name__ == "__main__":
     test_extract_and_render_old_heading_style()
     test_extract_and_render_plain_title_style()
     test_extract_bold_translation_title()
     test_render_structured_analysis_markdown()
+    test_render_structured_analysis_preserves_subparagraphs()
+    test_validate_analysis_markdown_flags_literal_display_math_escapes()
     print("analysis formatting tests passed")

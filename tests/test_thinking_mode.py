@@ -92,6 +92,33 @@ class FakeStructuredClient:
         return result, raw_response
 
 
+class BrokenStructuredClient:
+    def __init__(self, error):
+        self.error = error
+        self.calls = []
+
+    def create_with_completion(self, **kwargs):
+        self.calls.append(kwargs)
+        raise self.error
+
+
+def cleanup_disabled_request():
+    return {
+        "cleanup_requested": False,
+        "cleanup_attempted": False,
+        "cleanup_applied": False,
+        "cleanup_provider": "",
+        "cleanup_effective_model": "",
+        "cleanup_thinking_requested": False,
+        "cleanup_thinking_applied": False,
+        "cleanup_budget": None,
+        "cleanup_effort": None,
+        "cleanup_fallback_used": False,
+        "cleanup_reasoning_content_present": False,
+        "cleanup_structured_validated": False,
+    }
+
+
 def test_batch_mode_threads_thinking_flag():
     paper = DummyPaper()
     argv = ["main.py", "--thinking"]
@@ -151,6 +178,40 @@ def test_structured_completion_returns_reasoning_metadata():
     assert usage["total_tokens"] == 9
     assert response_state["reasoning_content_present"] is True
     assert structured_client.calls[0]["messages"][0]["content"] == "hello"
+
+
+def test_structured_completion_can_recover_json_from_reasoning_content():
+    broken_client = BrokenStructuredClient(Exception("1 validation error for StructuredPaperAnalysis"))
+    client = config.AIClient.__new__(config.AIClient)
+    client.provider = "qwen"
+    client.model = "qwen3-max"
+    client.provider_config = config.PROVIDER_CONFIG["qwen"]
+    client.thinking_support = client.provider_config["thinking_support"]
+
+    def fake_completion(**kwargs):
+        usage = SimpleNamespace(prompt_tokens=7, completion_tokens=8, total_tokens=15)
+        message = SimpleNamespace(
+            content="",
+            reasoning_content='{"chinese_title":"恢复标题","research_background":"背景","main_results":"结果","methods_and_tools":"方法","comparison_with_previous_work":"比较"}',
+        )
+        choice = SimpleNamespace(message=message)
+        return SimpleNamespace(choices=[choice], usage=usage, model=kwargs["model"])
+
+    client.completion_fn = fake_completion
+
+    with patch.object(client, "_get_structured_client", return_value=broken_client):
+        result, usage, response_state = client.structured_chat_completion_with_usage(
+            messages=[{"role": "user", "content": "hello"}],
+            response_model=analyzer.StructuredPaperAnalysis,
+            thinking_mode=True,
+            return_response_state=True,
+        )
+
+    assert result.chinese_title == "恢复标题"
+    assert usage["total_tokens"] == 15
+    assert response_state["thinking_applied"] is True
+    assert response_state["fallback_used"] is False
+    assert response_state["reasoning_content_present"] is True
 
 
 def test_build_analysis_cache_key_separates_thinking_and_plain():
@@ -213,6 +274,8 @@ def test_analyze_paper_uses_isolated_cache_keys_and_metadata():
     with patch.object(analyzer, "extract_pdf_text", return_value="pdf text"), patch.object(
         analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
     ), patch.object(
+        analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_disabled_request
+    ), patch.object(
         analyzer.ai_client, "structured_chat_completion_with_usage", side_effect=fake_structured_completion
     ), patch.object(
         analyzer, "get_cached_analysis", side_effect=fake_get_cached_analysis
@@ -232,6 +295,7 @@ def test_analyze_paper_uses_isolated_cache_keys_and_metadata():
 
 def test_analyze_paper_falls_back_to_prompt_when_structured_path_fails():
     paper = DummyPaper()
+    seen_thinking_modes = []
 
     def fake_get_request_config(thinking_mode=False):
         return {
@@ -245,6 +309,7 @@ def test_analyze_paper_falls_back_to_prompt_when_structured_path_fails():
         }
 
     def fake_raw_completion(messages, thinking_mode=False, return_response_state=False, **kwargs):
+        seen_thinking_modes.append(thinking_mode)
         response_state = {
             **fake_get_request_config(thinking_mode=thinking_mode),
             "fallback_used": False,
@@ -264,6 +329,8 @@ def test_analyze_paper_falls_back_to_prompt_when_structured_path_fails():
     with patch.object(analyzer, "extract_pdf_text", return_value="pdf text"), patch.object(
         analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
     ), patch.object(
+        analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_disabled_request
+    ), patch.object(
         analyzer.ai_client,
         "structured_chat_completion_with_usage",
         side_effect=Exception("json schema unsupported"),
@@ -276,6 +343,8 @@ def test_analyze_paper_falls_back_to_prompt_when_structured_path_fails():
     assert analysis_meta["structured_output_validated"] is False
     assert analysis_meta["structured_output_fallback"] is True
     assert analysis_meta["reasoning_content_present"] is True
+    assert analysis_meta["thinking_applied"] is False
+    assert seen_thinking_modes == [False]
 
 
 def test_deepseek_thinking_uses_reasoner_model():

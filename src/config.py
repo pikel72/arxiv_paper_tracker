@@ -1,7 +1,9 @@
 # config.py - 配置文件
 
+import ast
 import logging
 import os
+import re
 from pathlib import Path
 
 import instructor
@@ -24,6 +26,11 @@ def _get_optional_int(name):
         return None
 
 
+def _get_bool_env(name, default="off"):
+    value = os.getenv(name, default)
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GLM_API_KEY = os.getenv("GLM_API_KEY")
@@ -41,6 +48,10 @@ AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")
 ANALYSIS_THINKING_MODEL = os.getenv("ANALYSIS_THINKING_MODEL")
 ANALYSIS_THINKING_BUDGET = _get_optional_int("ANALYSIS_THINKING_BUDGET")
 ANALYSIS_THINKING_EFFORT = os.getenv("ANALYSIS_THINKING_EFFORT")
+ANALYSIS_CLEANUP_ENABLED = _get_bool_env("ANALYSIS_CLEANUP_ENABLED", "off")
+ANALYSIS_CLEANUP_PROVIDER = os.getenv("ANALYSIS_CLEANUP_PROVIDER") or AI_PROVIDER
+ANALYSIS_CLEANUP_MODEL = os.getenv("ANALYSIS_CLEANUP_MODEL") or AI_MODEL
+ANALYSIS_CLEANUP_THINKING_MODE = _get_bool_env("ANALYSIS_CLEANUP_THINKING_MODE", "off")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
@@ -316,6 +327,8 @@ class AIClient:
 
     def _is_thinking_unsupported_error(self, error_message):
         normalized = (error_message or "").lower()
+        if "json_invalid" in normalized or "validation error for structuredpaperanalysis" in normalized:
+            return False
         keywords = [
             "unsupported",
             "not support",
@@ -324,7 +337,6 @@ class AIClient:
             "unrecognized request argument",
             "invalid parameter",
             "invalid_request_error",
-            "reasoning",
             "enable_thinking",
             "model not found",
             "no such model",
@@ -363,6 +375,123 @@ class AIClient:
         content = _coerce_text_block(_read_attr_or_key(message, "content")).strip()
         usage = self._usage_to_dict(_read_attr_or_key(response, "usage"))
         return content, usage
+
+    def _normalize_json_candidate(self, text):
+        candidate = (text or "").strip()
+        if not candidate:
+            return ""
+        if candidate.startswith("```"):
+            fence_match = re.search(r"```(?:json)?\s*(.*?)```", candidate, re.S)
+            if fence_match:
+                candidate = fence_match.group(1).strip()
+        if candidate[:1] in "{[":
+            return candidate
+        match = re.search(r"(\{.*\}|\[.*\])", candidate, re.S)
+        if match:
+            return match.group(1).strip()
+        return ""
+
+    def _parse_structured_response(self, response_model, response):
+        choices = _read_attr_or_key(response, "choices", []) or []
+        if not choices:
+            raise ValueError("结构化响应为空")
+        message = _read_attr_or_key(choices[0], "message")
+        content = _coerce_text_block(_read_attr_or_key(message, "content")).strip()
+        reasoning_content = _coerce_text_block(_read_attr_or_key(message, "reasoning_content")).strip()
+        candidates = []
+        normalized_content = self._normalize_json_candidate(content)
+        if normalized_content:
+            candidates.append(normalized_content)
+        normalized_reasoning = self._normalize_json_candidate(reasoning_content)
+        if normalized_reasoning and normalized_reasoning not in candidates:
+            candidates.append(normalized_reasoning)
+        if not candidates:
+            raise ValueError("结构化响应中没有可解析的 JSON 内容")
+
+        last_error = None
+        for candidate in candidates:
+            try:
+                return response_model.model_validate_json(candidate)
+            except Exception as e:
+                last_error = e
+        if last_error is not None:
+            raise last_error
+        raise ValueError("结构化响应解析失败")
+
+    def _build_synthetic_response_state(
+        self,
+        request_config,
+        fallback_used=False,
+        fallback_reason=None,
+        reasoning_content_present=False,
+    ):
+        return {
+            "provider": request_config["provider"],
+            "effective_model": request_config["effective_model"],
+            "thinking_requested": request_config["thinking_requested"],
+            "thinking_applied": request_config["thinking_applied"],
+            "thinking_budget": request_config["thinking_budget"],
+            "thinking_effort": request_config["thinking_effort"],
+            "fallback_used": bool(fallback_used),
+            "fallback_reason": fallback_reason or "",
+            "reasoning_content_present": bool(reasoning_content_present),
+            "reasoning_content_length": 0,
+            "structured_output_mode": request_config.get("structured_mode"),
+        }
+
+    def _extract_structured_candidate_from_error_message(self, error_message):
+        text = error_message or ""
+        for field_name in ("content", "reasoning_content"):
+            pattern = rf"{field_name}='((?:\\\\.|[^'])*)'"
+            for match in re.finditer(pattern, text, re.S):
+                encoded = match.group(1)
+                try:
+                    value = ast.literal_eval("'" + encoded + "'")
+                except Exception:
+                    value = encoded
+                candidate = self._normalize_json_candidate(value)
+                if candidate:
+                    return candidate, field_name == "reasoning_content"
+        return "", False
+
+    def _recover_structured_result_from_error_message(
+        self,
+        response_model,
+        request_config,
+        error_message,
+        fallback_used=False,
+        fallback_reason=None,
+    ):
+        candidate, from_reasoning = self._extract_structured_candidate_from_error_message(error_message)
+        if not candidate:
+            raise ValueError("异常信息中没有可恢复的结构化 JSON")
+        result = response_model.model_validate_json(candidate)
+        response_state = self._build_synthetic_response_state(
+            request_config,
+            fallback_used=fallback_used,
+            fallback_reason=fallback_reason,
+            reasoning_content_present=from_reasoning,
+        )
+        return result, {}, response_state
+
+    def _recover_structured_result_from_raw(
+        self,
+        create_kwargs,
+        response_model,
+        request_config,
+        fallback_used=False,
+        fallback_reason=None,
+    ):
+        response = self.completion_fn(**create_kwargs)
+        result = self._parse_structured_response(response_model, response)
+        usage = self._usage_to_dict(_read_attr_or_key(response, "usage"))
+        response_state = self._build_response_state(
+            request_config,
+            response,
+            fallback_used=fallback_used,
+            fallback_reason=fallback_reason,
+        )
+        return result, usage, response_state
 
     def _build_response_state(self, request_config, response, fallback_used=False, fallback_reason=None):
         reasoning_content = self._extract_reasoning_content(response)
@@ -441,6 +570,49 @@ class AIClient:
                         and self._is_thinking_unsupported_error(str(e))
                     )
 
+                    if structured and response_model is not None and not is_rate_limit and not is_thinking_fallback:
+                        try:
+                            recovered_result, recovered_usage, recovered_state = self._recover_structured_result_from_error_message(
+                                response_model,
+                                request_config,
+                                str(e),
+                                fallback_used=index > 0,
+                                fallback_reason=fallback_reason,
+                            )
+                            logger.warning(
+                                "结构化解析失败后，已从异常信息恢复 JSON 结果: provider=%s, model=%s, error=%s",
+                                self.provider,
+                                request_config["effective_model"],
+                                str(e),
+                            )
+                            return recovered_result, recovered_usage, recovered_state
+                        except Exception:
+                            pass
+
+                        try:
+                            recovered_result, recovered_usage, recovered_state = self._recover_structured_result_from_raw(
+                                create_kwargs,
+                                response_model,
+                                request_config,
+                                fallback_used=index > 0,
+                                fallback_reason=fallback_reason,
+                            )
+                            logger.warning(
+                                "结构化解析失败后，已通过原始响应恢复 JSON 结果: provider=%s, model=%s, error=%s",
+                                self.provider,
+                                request_config["effective_model"],
+                                str(e),
+                            )
+                            return recovered_result, recovered_usage, recovered_state
+                        except Exception as recovery_error:
+                            logger.warning(
+                                "结构化解析失败后的原始响应恢复也失败: provider=%s, model=%s, error=%s",
+                                self.provider,
+                                request_config["effective_model"],
+                                str(recovery_error),
+                            )
+                            raise e
+
                     if is_thinking_fallback:
                         fallback_reason = str(e)
                         logger.warning(
@@ -468,3 +640,41 @@ class AIClient:
 
 
 ai_client = AIClient(AI_PROVIDER, AI_MODEL)
+analysis_cleanup_client = None
+if ANALYSIS_CLEANUP_ENABLED:
+    try:
+        analysis_cleanup_client = AIClient(ANALYSIS_CLEANUP_PROVIDER, ANALYSIS_CLEANUP_MODEL)
+    except Exception as e:
+        logger.warning("分析 cleanup 客户端初始化失败，将禁用 cleanup: %s", str(e))
+
+
+def get_analysis_cleanup_request_config():
+    config = {
+        "cleanup_requested": bool(ANALYSIS_CLEANUP_ENABLED and analysis_cleanup_client is not None),
+        "cleanup_attempted": False,
+        "cleanup_applied": False,
+        "cleanup_provider": "",
+        "cleanup_effective_model": "",
+        "cleanup_thinking_requested": bool(ANALYSIS_CLEANUP_THINKING_MODE),
+        "cleanup_thinking_applied": False,
+        "cleanup_budget": None,
+        "cleanup_effort": None,
+        "cleanup_fallback_used": False,
+        "cleanup_reasoning_content_present": False,
+        "cleanup_structured_validated": False,
+    }
+    if not config["cleanup_requested"]:
+        return config
+
+    request_config = analysis_cleanup_client.get_analysis_request_config(thinking_mode=ANALYSIS_CLEANUP_THINKING_MODE)
+    config.update(
+        {
+            "cleanup_provider": request_config["provider"],
+            "cleanup_effective_model": request_config["effective_model"],
+            "cleanup_thinking_requested": request_config["thinking_requested"],
+            "cleanup_thinking_applied": request_config["thinking_applied"],
+            "cleanup_budget": request_config["thinking_budget"],
+            "cleanup_effort": request_config["thinking_effort"],
+        }
+    )
+    return config

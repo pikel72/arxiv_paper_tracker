@@ -213,12 +213,25 @@ def build_analysis_cache_key(base_key: str, request_state: Optional[dict] = None
     thinking_applied = "on" if state.get("thinking_applied") else "off"
     budget = state.get("thinking_budget")
     effort = state.get("thinking_effort") or ""
-    schema_version = state.get("analysis_schema_version") or "paper_analysis_v1"
+    schema_version = state.get("analysis_schema_version") or "paper_analysis_v2_cleanup"
     structured_mode = state.get("structured_output_mode") or "structured"
     budget_part = "" if budget is None else str(budget)
+    cleanup_enabled = state.get("cleanup_applied")
+    if cleanup_enabled is None:
+        cleanup_enabled = state.get("cleanup_requested")
+    cleanup_state = "on" if cleanup_enabled else "off"
+    cleanup_provider = state.get("cleanup_provider") if cleanup_enabled else ""
+    cleanup_model = state.get("cleanup_effective_model") if cleanup_enabled else ""
+    cleanup_thinking = "on" if cleanup_enabled and state.get("cleanup_thinking_applied") else "off"
+    cleanup_budget = state.get("cleanup_budget") if cleanup_enabled else None
+    cleanup_effort = state.get("cleanup_effort") if cleanup_enabled else ""
+    cleanup_budget_part = "" if cleanup_budget is None else str(cleanup_budget)
     return (
         f"{base_key}|{provider}|{model}|thinking={thinking_applied}|budget={budget_part}|"
-        f"effort={effort}|schema={schema_version}|structured={structured_mode}"
+        f"effort={effort}|schema={schema_version}|structured={structured_mode}|"
+        f"cleanup={cleanup_state}|cleanup_provider={cleanup_provider or 'none'}|"
+        f"cleanup_model={cleanup_model or 'none'}|cleanup_thinking={cleanup_thinking}|"
+        f"cleanup_budget={cleanup_budget_part}|cleanup_effort={cleanup_effort}"
     )
 
 

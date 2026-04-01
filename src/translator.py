@@ -9,11 +9,32 @@ from cache import get_cached_translation, cache_translation
 
 logger = logging.getLogger(__name__)
 
+TRANSLATION_TITLE_REQUIREMENTS = """
+翻译要求：
+1. 翻译对象默认面向偏微分方程与分析理论研究者，而不是面向泛科普读者。
+2. 标题翻译要学术、准确、克制，优先使用本领域常见术语，不要写成解释性副标题，也不要为了“顺口”改写定理强度。
+3. 原文中的数学对象、方程名、模型名、性质名、方法名要尽量使用稳定译法；拿不准时宁可直译，也不要擅自意译发挥。
+4. 不要遗漏限定词，如 global, local, quantitative, asymptotic, sharp, generic, axisymmetric, without swirl, critical, supercritical, conditional 等。
+5. existence、uniqueness、regularity、well-posedness、blow-up、scattering、decay、stability、instability、asymptotics、vanishing viscosity 等术语要准确保留其理论含义，不要弱化。
+6. 数学符号、变量名、公式、定理编号、范数记号、函数空间记号应原样保留。
+7. 只返回标题本身，不要附加注释、解释或评价。
+""".strip()
+
+TRANSLATION_ABSTRACT_REQUIREMENTS = """
+翻译要求：
+1. 摘要翻译必须忠实于原文信息，不要擅自压缩掉假设、范围、否定词、比较对象、数量级、结论强度和适用条件。
+2. 作者“证明了什么”要明确译出，不要把 proved, established, showed, validated 等强结论弱化成“讨论了”“研究了”。
+3. 若原文涉及主要定理、先验估计、函数空间、误差阶、增长率、缩放、稳定性/不稳定性、爆破/散射等内容，应尽量完整保留，不要翻成空泛综述。
+4. 关键术语、方程名、模型名、技术名、函数空间、范数、缩放、误差阶、增长率、公式和符号要尽量保留；如 $L^p$, $H^s$, Sobolev, Besov, Strichartz, Carleman, bootstrap, compactness 等通常不应被模糊化。
+5. 如果原文句子很长，可以拆成更自然的中文句子，但不要改变逻辑关系，不要把条件和结论翻串，也不要把 conjecture、heuristic、formal、conditional 说成严格定理。
+6. 语气保持学术摘要风格，避免口语化、宣传化，也不要额外加入解释、评论或推测。
+""".strip()
+
 
 class StructuredTitleTranslation(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    chinese_title: str = Field(description="论文标题的中文翻译，只返回标题文本本身。")
+    chinese_title: str = Field(description="面向偏微分方程与分析理论读者的中文标题翻译, 只返回标题文本本身。")
 
     @field_validator("chinese_title", mode="before")
     @classmethod
@@ -25,7 +46,9 @@ class StructuredTitleTranslation(BaseModel):
 
 
 class StructuredAbstractTranslation(StructuredTitleTranslation):
-    abstract_translation: str = Field(description="论文摘要的完整中文翻译，保持原文的学术语气和信息。")
+    abstract_translation: str = Field(
+        description="论文摘要的完整中文翻译, 保持原文的学术语气和信息, 尽量保留假设、结论强度、函数空间、公式与术语。"
+    )
 
     @field_validator("abstract_translation", mode="before")
     @classmethod
@@ -51,18 +74,21 @@ def _build_translation_messages(paper, translate_title_only=False):
     if translate_title_only:
         prompt = (
             "请严格按照给定的结构化 schema 返回翻译结果。\n\n"
-            "请将以下英文论文标题翻译成中文，保持学术性、准确性和简洁性。\n\n"
+            f"{TRANSLATION_TITLE_REQUIREMENTS}\n\n"
+            "请将以下英文论文标题翻译成中文。\n\n"
             f"论文标题: {paper.title}\n"
         )
     else:
         prompt = (
             "请严格按照给定的结构化 schema 返回翻译结果。\n\n"
-            "请将以下英文论文标题和摘要翻译成中文，保持学术性和准确性，尽量保留原文术语与论证语气。\n\n"
+            f"{TRANSLATION_TITLE_REQUIREMENTS}\n\n"
+            f"{TRANSLATION_ABSTRACT_REQUIREMENTS}\n\n"
+            "请将以下英文论文标题和摘要翻译成中文。\n\n"
             f"论文标题: {paper.title}\n"
             f"摘要: {paper.summary}\n"
         )
     return [
-        {"role": "system", "content": "你是一位专业的学术翻译专家，擅长数学和物理领域的翻译。请严格遵守返回 schema。"},
+        {"role": "system", "content": "你是一位偏微分方程与分析理论方向的学术翻译专家. 请严格遵守返回 schema. "},
         {"role": "user", "content": prompt},
     ]
 
@@ -70,7 +96,9 @@ def _build_translation_messages(paper, translate_title_only=False):
 def _build_translation_fallback_prompt(paper, translate_title_only=False):
     if translate_title_only:
         return f"""
-            请将以下英文标题翻译成中文，保持学术性和准确性：
+            {TRANSLATION_TITLE_REQUIREMENTS}
+
+            请将以下英文标题翻译成中文：
             
             论文标题: {paper.title}
             
@@ -81,7 +109,11 @@ def _build_translation_fallback_prompt(paper, translate_title_only=False):
             **中文标题**: [翻译后的标题]
             """
     return f"""
-            请将以下英文摘要翻译成中文，保持学术性和准确性：
+            {TRANSLATION_TITLE_REQUIREMENTS}
+
+            {TRANSLATION_ABSTRACT_REQUIREMENTS}
+
+            请将以下英文摘要翻译成中文：
             
             论文标题: {paper.title}
             摘要: {paper.summary}
@@ -133,7 +165,7 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
             prompt = _build_translation_fallback_prompt(paper, translate_title_only=translate_title_only)
             translation = ai_client.chat_completion(
                 messages=[
-                    {"role": "system", "content": "你是一位专业的学术翻译专家，擅长数学和物理领域的翻译。"},
+                    {"role": "system", "content": "你是一位偏微分方程与分析理论方向的学术翻译专家. "},
                     {"role": "user", "content": prompt},
                 ]
             )

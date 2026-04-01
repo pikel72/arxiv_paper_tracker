@@ -9,6 +9,7 @@
 - 支持多种 AI 模型提供商（DeepSeek、OpenAI、智谱AI、通义千问、豆包、Kimi、OpenRouter、SiliconFlow 等）
 - 底层统一通过 LiteLLM 调用多家 OpenAI-compatible / 多提供商接口
 - 完整论文分析使用 Instructor + Pydantic 做结构化输出校验，再由本地代码渲染固定 Markdown
+- 可选启用第二个 cleanup 模型，对完整分析的各个 block 做严格文本清洗，再由本地代码拼合 Markdown
 - 主题分类和摘要翻译同样优先走结构化输出，失败时自动回退到兼容的文本模式
 - 智能主题分类：重点关注论文进行完整分析，了解领域论文翻译摘要
 - 多线程并行处理，提高分析效率
@@ -85,6 +86,19 @@ EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
 - `PRIORITY_ANALYSIS_DELAY`: 重点论文分析间隔时间（秒）
 - `SECONDARY_ANALYSIS_DELAY`: 摘要翻译间隔时间（秒）
 - `EMAIL_SUBJECT_PREFIX`: 邮件主题前缀
+
+#### 可选：完整分析 cleanup 配置
+
+如果你希望“论文内容分析”和“Markdown 文本清洗”由两个不同模型完成，可以增加以下变量：
+
+```bash
+ANALYSIS_CLEANUP_ENABLED=on
+ANALYSIS_CLEANUP_PROVIDER=openrouter
+ANALYSIS_CLEANUP_MODEL=openrouter/your-editor-model
+ANALYSIS_CLEANUP_THINKING_MODE=off
+```
+
+cleanup 只会拿到两类输入：论文元数据，以及结构化分析的各个 block。它会 block in, block out 地返回清洗后的标题和四个 section，然后再由本地代码拼回固定 Markdown 结构。cleanup 的职责仅限于修复乱码、转义、分段与表达清晰度，不应该重新发明数学内容。
 
 4. 安装依赖（本地测试时需要）：
 ```bash

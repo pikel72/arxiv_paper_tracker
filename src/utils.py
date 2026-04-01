@@ -67,6 +67,16 @@ def _write_analysis_metadata_block(f, analysis_meta, ai_model):
     f.write(f"fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
     f.write(f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
     f.write(f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
+    f.write(f"cleanup_requested: {bool(analysis_meta.get('cleanup_requested'))}\n")
+    f.write(f"cleanup_attempted: {bool(analysis_meta.get('cleanup_attempted'))}\n")
+    f.write(f"cleanup_applied: {bool(analysis_meta.get('cleanup_applied'))}\n")
+    if analysis_meta.get("cleanup_provider"):
+        f.write(f"cleanup_provider: {analysis_meta.get('cleanup_provider')}\n")
+    if analysis_meta.get("cleanup_effective_model"):
+        f.write(f"cleanup_effective_model: {analysis_meta.get('cleanup_effective_model')}\n")
+    f.write(f"cleanup_thinking_applied: {bool(analysis_meta.get('cleanup_thinking_applied'))}\n")
+    f.write(f"cleanup_reasoning_content_present: {bool(analysis_meta.get('cleanup_reasoning_content_present'))}\n")
+    f.write(f"cleanup_structured_validated: {bool(analysis_meta.get('cleanup_structured_validated'))}\n")
     f.write(f"from_cache: {bool(analysis_meta.get('from_cache'))}\n")
 
 
@@ -79,19 +89,6 @@ def _write_usage_block(f, usage):
     f.write(f"  total_tokens: {usage.get('total_tokens', 0)}\n")
     if "reasoning_tokens" in usage:
         f.write(f"  reasoning_tokens: {usage.get('reasoning_tokens', 0)}\n")
-
-
-def _format_analysis_audit_line(analysis_meta, ai_model):
-    if not analysis_meta:
-        return ""
-    return (
-        f"**分析审计**: provider={analysis_meta.get('provider', 'unknown')}, "
-        f"model={analysis_meta.get('effective_model', ai_model)}, "
-        f"thinking={bool(analysis_meta.get('thinking_applied'))}, "
-        f"fallback={bool(analysis_meta.get('fallback_used'))}, "
-        f"reasoning_content={bool(analysis_meta.get('reasoning_content_present'))}, "
-        f"structured={bool(analysis_meta.get('structured_output_validated'))}\n\n"
-    )
 
 
 def write_single_analysis(
@@ -137,7 +134,6 @@ def write_single_analysis(
         f.write(f"# {chinese_title if chinese_title else title}\n")
         if chinese_title != title:
             f.write(f"{title}\n\n")
-        f.write(_format_analysis_audit_line(analysis_meta or {}, AI_MODEL))
         f.write(f"**作者**: {', '.join(author_names)}\n\n")
         f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
         f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
@@ -202,7 +198,6 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 if chinese_title != title:
                     f.write(f"{title}\n\n")
 
-                f.write(_format_analysis_audit_line(analysis_meta, AI_MODEL))
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
