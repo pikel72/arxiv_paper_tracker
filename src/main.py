@@ -48,7 +48,7 @@ def configure_logging():
         handlers=handlers
     )
 
-def process_single_paper_task(paper, index, total):
+def process_single_paper_task(paper, index, total, thinking_mode=False):
     """处理单篇论文的任务函数，用于多线程"""
     try:
         import random
@@ -64,8 +64,8 @@ def process_single_paper_task(paper, index, total):
             pdf_path = download_paper(paper, PAPERS_DIR)
             if pdf_path:
                 time.sleep(PRIORITY_ANALYSIS_DELAY)
-                analysis, _ = analyze_paper(pdf_path, paper)
-                return 1, (paper, analysis, pdf_path)
+                analysis, _, analysis_meta = analyze_paper(pdf_path, paper, thinking_mode=thinking_mode)
+                return 1, (paper, analysis, pdf_path, analysis_meta)
             else:
                 logger.warning(f"PDF下载失败，降级处理: {paper.title}")
                 time.sleep(SECONDARY_ANALYSIS_DELAY)
@@ -198,6 +198,8 @@ def main():
     logger.info(f"- 了解主题数量: {len(SECONDARY_TOPICS)}")
     if args.date:
         logger.info(f"- 指定日期: {args.date}")
+    if args.thinking:
+        logger.info("- 完整分析启用深度思考模式")
     
     # 获取论文（支持指定日期）
     papers = get_recent_papers(CATEGORIES, MAX_PAPERS, target_date=args.date)
@@ -216,7 +218,7 @@ def main():
     
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         # 提交所有任务
-        futures = [executor.submit(process_single_paper_task, paper, i, len(papers)) 
+        futures = [executor.submit(process_single_paper_task, paper, i, len(papers), args.thinking)
                    for i, paper in enumerate(papers, 1)]
         
         # 等待结果
@@ -246,7 +248,7 @@ def main():
     pdf_paths_to_clean = [data[2] for data in priority_analyses if len(data) > 2 and data[2]]
     
     # 转换数据格式：去掉 pdf_path，保持 (paper, analysis) 格式用于后续处理
-    priority_analyses_clean = [(data[0], data[1]) for data in priority_analyses]
+    priority_analyses_clean = [(data[0], data[1], data[3] if len(data) > 3 else {}) for data in priority_analyses]
     
     # 将分析结果写入带时间戳的.md文件
     result_file = write_to_conclusion(priority_analyses_clean, secondary_analyses, irrelevant_papers)
@@ -315,13 +317,20 @@ def analyze_single_paper(arxiv_id, max_pages=10, thinking_mode=False):
         logger.error("PDF 下载失败，终止分析")
         return
 
-    analysis, usage = analyze_paper(pdf_path, paper, max_pages=max_pages, use_cache=False, thinking_mode=thinking_mode)
+    analysis, usage, analysis_meta = analyze_paper(pdf_path, paper, max_pages=max_pages, use_cache=False, thinking_mode=thinking_mode)
 
     safe_id = arxiv_id.replace('/', '_')
     now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     custom_filename = f"arxiv_{safe_id}_{now}.md"
     from utils import write_single_analysis
-    result_file = write_single_analysis(paper, analysis, filename=custom_filename, usage=usage, thinking_mode=thinking_mode)
+    result_file = write_single_analysis(
+        paper,
+        analysis,
+        filename=custom_filename,
+        usage=usage,
+        analysis_meta=analysis_meta,
+        thinking_mode=thinking_mode,
+    )
     
     end_time = time.time()
     duration = end_time - start_time
@@ -345,7 +354,12 @@ def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=False):
     mode_str = " (深度思考模式)" if thinking_mode else ""
     logger.info(f"开始分析本地 PDF{mode_str}: {pdf_path}")
     
-    analysis, usage = analyze_pdf_only(str(pdf_path), max_pages=max_pages, use_cache=False, thinking_mode=thinking_mode)
+    analysis, usage, analysis_meta = analyze_pdf_only(
+        str(pdf_path),
+        max_pages=max_pages,
+        use_cache=False,
+        thinking_mode=thinking_mode,
+    )
     
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -365,13 +379,34 @@ def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=False):
         f.write(f"pdf_file: {pdf_path.name}\n")
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"thinking_mode: {thinking_mode}\n")
+        if analysis_meta:
+            if analysis_meta.get("provider"):
+                f.write(f"ai_provider: {analysis_meta.get('provider')}\n")
+            if analysis_meta.get("effective_model"):
+                f.write(f"effective_model: {analysis_meta.get('effective_model')}\n")
+            f.write(f"thinking_applied: {bool(analysis_meta.get('thinking_applied'))}\n")
+            f.write(f"fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
+            f.write(f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
+            f.write(f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
+            f.write(f"from_cache: {bool(analysis_meta.get('from_cache'))}\n")
         if usage:
             f.write(f"token_usage:\n")
             f.write(f"  prompt_tokens: {usage.get('prompt_tokens', 0)}\n")
             f.write(f"  completion_tokens: {usage.get('completion_tokens', 0)}\n")
             f.write(f"  total_tokens: {usage.get('total_tokens', 0)}\n")
+            if "reasoning_tokens" in usage:
+                f.write(f"  reasoning_tokens: {usage.get('reasoning_tokens', 0)}\n")
         f.write(f"---\n\n")
         f.write(f"# {chinese_title}\n\n")
+        if analysis_meta:
+            f.write(
+                f"**分析审计**: provider={analysis_meta.get('provider', 'unknown')}, "
+                f"model={analysis_meta.get('effective_model', AI_MODEL)}, "
+                f"thinking={bool(analysis_meta.get('thinking_applied'))}, "
+                f"fallback={bool(analysis_meta.get('fallback_used'))}, "
+                f"reasoning_content={bool(analysis_meta.get('reasoning_content_present'))}, "
+                f"structured={bool(analysis_meta.get('structured_output_validated'))}\n\n"
+            )
         f.write(f"{analysis_body}\n")
     
     end_time = time.time()

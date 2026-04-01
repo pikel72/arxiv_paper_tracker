@@ -18,6 +18,25 @@ logger = logging.getLogger(__name__)
 def _extract_translation_title(text: str) -> str:
     return extract_analysis_title(text, "").strip()
 
+
+def _split_priority_entry(entry):
+    if len(entry) >= 3 and isinstance(entry[2], dict):
+        return entry[0], entry[1], entry[2]
+    return entry[0], entry[1], {}
+
+
+def _format_analysis_audit_line(analysis_meta):
+    if not analysis_meta:
+        return ""
+    return (
+        f"**分析审计**: provider={analysis_meta.get('provider', 'unknown')}, "
+        f"model={analysis_meta.get('effective_model', 'unknown')}, "
+        f"thinking={bool(analysis_meta.get('thinking_applied'))}, "
+        f"fallback={bool(analysis_meta.get('fallback_used'))}, "
+        f"reasoning_content={bool(analysis_meta.get('reasoning_content_present'))}, "
+        f"structured={bool(analysis_meta.get('structured_output_validated'))}\n\n"
+    )
+
 def format_email_content(priority_analyses, secondary_analyses, irrelevant_papers=None):
     """格式化邮件内容，包含三种类型的论文"""
     today = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -32,7 +51,8 @@ def format_email_content(priority_analyses, secondary_analyses, irrelevant_paper
     # 重点关注论文
     if priority_analyses:
         content += "### 🔥 重点关注论文（完整分析）\n\n"
-        for i, (paper, analysis) in enumerate(priority_analyses, 1):
+        for i, entry in enumerate(priority_analyses, 1):
+            paper, analysis, analysis_meta = _split_priority_entry(entry)
             author_names = [author.name for author in paper.authors]
             chinese_title = extract_analysis_title(analysis, paper.title)
             analysis_body = render_analysis_body(analysis)
@@ -45,6 +65,7 @@ def format_email_content(priority_analyses, secondary_analyses, irrelevant_paper
             content += f"**类别**: {', '.join(paper.categories)}\n"
             content += f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n"
             content += f"**链接**: {paper.entry_id}\n\n"
+            content += _format_analysis_audit_line(analysis_meta)
             content += f"{analysis_body}\n\n"
             content += "---\n\n"
     

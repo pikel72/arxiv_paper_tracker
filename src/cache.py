@@ -186,14 +186,40 @@ def get_cached_classification(arxiv_id: str) -> Optional[tuple]:
     return None
 
 
-def cache_analysis(arxiv_id: str, analysis: str) -> bool:
+def cache_analysis(arxiv_id: str, analysis: str, metadata: Optional[dict] = None) -> bool:
     """缓存论文分析结果"""
-    return set_cache("analysis", arxiv_id, analysis)
+    payload = {"analysis": analysis}
+    if metadata:
+        payload["metadata"] = metadata
+    return set_cache("analysis", arxiv_id, payload)
 
 
-def get_cached_analysis(arxiv_id: str) -> Optional[str]:
-    """获取缓存的分析结果"""
-    return get_cache("analysis", arxiv_id)
+def get_cached_analysis(arxiv_id: str) -> Optional[tuple]:
+    """获取缓存的分析结果，返回 (analysis, metadata) 或 None"""
+    data = get_cache("analysis", arxiv_id)
+    if data is None:
+        return None
+    if isinstance(data, dict) and "analysis" in data:
+        return data["analysis"], data.get("metadata") or {}
+    if isinstance(data, str):
+        return data, {}
+    return None
+
+
+def build_analysis_cache_key(base_key: str, request_state: Optional[dict] = None) -> str:
+    state = request_state or {}
+    provider = state.get("provider") or "unknown"
+    model = state.get("effective_model") or "unknown"
+    thinking_applied = "on" if state.get("thinking_applied") else "off"
+    budget = state.get("thinking_budget")
+    effort = state.get("thinking_effort") or ""
+    schema_version = state.get("analysis_schema_version") or "paper_analysis_v1"
+    structured_mode = state.get("structured_output_mode") or "structured"
+    budget_part = "" if budget is None else str(budget)
+    return (
+        f"{base_key}|{provider}|{model}|thinking={thinking_applied}|budget={budget_part}|"
+        f"effort={effort}|schema={schema_version}|structured={structured_mode}"
+    )
 
 
 def cache_translation(arxiv_id: str, translation: str, title_only: bool = False) -> bool:

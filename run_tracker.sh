@@ -4,6 +4,8 @@
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT" || exit 1
+THINKING_MODE=0
+THINKING_TEXT="OFF"
 
 # Check if Python 3 is available
 if ! command -v python3 &> /dev/null; then
@@ -22,14 +24,32 @@ show_menu() {
     echo "  1. Run full analysis"
     echo "  2. Analyze single paper (arXiv ID)"
     echo "  3. Analyze local PDF"
-    echo "  4. Exit"
+    echo "  4. Toggle thinking mode [$THINKING_TEXT]"
+    echo "  5. Exit"
     echo ""
+}
+
+toggle_thinking() {
+    if [ "$THINKING_MODE" -eq 0 ]; then
+        THINKING_MODE=1
+        THINKING_TEXT="ON"
+        echo "Thinking mode ENABLED - AI will perform deeper analysis."
+    else
+        THINKING_MODE=0
+        THINKING_TEXT="OFF"
+        echo "Thinking mode DISABLED - Standard analysis mode."
+    fi
+    read -p "Press Enter to continue..."
 }
 
 # Function to run full analysis
 run_all() {
     echo "=== Running Full Analysis ==="
-    python3 src/main.py
+    if [ "$THINKING_MODE" -eq 1 ]; then
+        python3 src/main.py --thinking
+    else
+        python3 src/main.py
+    fi
     echo "Operation completed."
     read -p "Press Enter to continue..."
 }
@@ -37,6 +57,7 @@ run_all() {
 # Function to analyze single paper
 run_single() {
     echo "=== Single Paper Analysis (arXiv ID) ==="
+    echo "Thinking mode: $THINKING_TEXT"
     read -p "Enter arXiv ID (e.g., 2305.09582): " arxiv_id
     if [ -z "$arxiv_id" ]; then
         echo "arXiv ID cannot be empty."
@@ -47,7 +68,11 @@ run_single() {
     if [ -z "$pages" ]; then
         pages=10
     fi
-    python3 src/main.py --arxiv "$arxiv_id" -p "$pages"
+    if [ "$THINKING_MODE" -eq 1 ]; then
+        python3 src/main.py --arxiv "$arxiv_id" -p "$pages" --thinking
+    else
+        python3 src/main.py --arxiv "$arxiv_id" -p "$pages"
+    fi
     echo "Operation completed."
     read -p "Press Enter to continue..."
 }
@@ -55,6 +80,7 @@ run_single() {
 # Function to analyze local PDF
 run_local_pdf() {
     echo "=== Local PDF Analysis ==="
+    echo "Thinking mode: $THINKING_TEXT"
 
     if [ ! -d "papers" ]; then
         echo "Papers folder not found. Creating 'papers' folder..."
@@ -108,7 +134,11 @@ run_local_pdf() {
         pages=10
     fi
 
-    python3 src/main.py --pdf "$selected_pdf" -p "$pages"
+    if [ "$THINKING_MODE" -eq 1 ]; then
+        python3 src/main.py --pdf "$selected_pdf" -p "$pages" --thinking
+    else
+        python3 src/main.py --pdf "$selected_pdf" -p "$pages"
+    fi
     echo "Operation completed."
     read -p "Press Enter to continue..."
 }
@@ -116,7 +146,7 @@ run_local_pdf() {
 # Main loop
 while true; do
     show_menu
-    read -p "Enter your choice (1-4): " choice
+    read -p "Enter your choice (1-5): " choice
 
     case $choice in
         1)
@@ -129,6 +159,9 @@ while true; do
             run_local_pdf
             ;;
         4)
+            toggle_thinking
+            ;;
+        5)
             echo "Thank you for using!"
             exit 0
             ;;

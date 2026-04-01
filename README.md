@@ -7,12 +7,15 @@
 - 每天北京时间早上 10:40 自动运行（UTC 02:40）
 - 自动追踪最近发布的 arXiv 论文（默认类别：数学偏微分方程 math.AP）
 - 支持多种 AI 模型提供商（DeepSeek、OpenAI、智谱AI、通义千问、豆包、Kimi、OpenRouter、SiliconFlow 等）
+- 底层统一通过 LiteLLM 调用多家 OpenAI-compatible / 多提供商接口
+- 完整论文分析使用 Instructor + Pydantic 做结构化输出校验，再由本地代码渲染固定 Markdown
+- 主题分类和摘要翻译同样优先走结构化输出，失败时自动回退到兼容的文本模式
 - 智能主题分类：重点关注论文进行完整分析，了解领域论文翻译摘要
 - 多线程并行处理，提高分析效率
 - 内置缓存机制，避免重复分析
 - 支持单论文分析和本地 PDF 分析
 - 通过邮件发送分析报告
-- 自动保存分析结果到 conclusion.md
+- 自动保存分析结果到 `results/` 目录下的时间戳 Markdown 文件
 - 自动清理下载的 PDF 文件以节省空间
 
 ## 安装与配置
@@ -146,11 +149,11 @@ CUSTOM_API_BASE=https://your-custom-api.com/v1
 ## 使用方法
 
 ### 自动运行
-- 工作流会在每天早上 8 点（北京时间）自动运行
+- 工作流会在每天早上 10:40（北京时间）自动运行
 - 运行结果会：
   1. 发送到配置的邮箱
-  2. 保存在 conclusion.md 文件中
-  3. 自动提交到仓库
+  2. 保存在 `results/` 目录的 Markdown 文件中
+  3. 上传为 GitHub Actions Artifact
 
 ### 手动触发
 1. 在仓库的 Actions 页面
@@ -163,9 +166,12 @@ CUSTOM_API_BASE=https://your-custom-api.com/v1
 双击运行项目根目录下的 `run_tracker.bat` 脚本，进入交互式菜单：
 
 - 选择 1：运行全流程分析（抓取并分析最近论文）
-- 选择 2：单论文分析（输入 arXiv ID 和可选页数）
-- 选择 3：本地 PDF 分析（自动列出 papers 文件夹下的 PDF，选择后分析）
-- 选择 4：退出
+- 选择 2：按指定日期或日期范围运行分析
+- 选择 3：单论文分析（输入 arXiv ID 和可选页数）
+- 选择 4：本地 PDF 分析（自动列出 `papers` 文件夹下的 PDF，选择后分析）
+- 选择 5：缓存管理
+- 选择 6：切换 thinking 模式
+- 选择 7：退出
 
 脚本假设您已提前配置好虚拟环境和 `.env` 文件。本地 PDF 分析功能要求将 PDF 文件放在项目根目录的 `papers` 文件夹中。
 
@@ -183,7 +189,8 @@ chmod +x run_tracker.sh
 - 选择 1：运行全流程分析（抓取并分析最近论文）
 - 选择 2：单论文分析（输入 arXiv ID 和可选页数）
 - 选择 3：本地 PDF 分析（自动列出 papers 文件夹下的 PDF，选择后分析）
-- 选择 4：退出
+- 选择 4：切换 thinking 模式
+- 选择 5：退出
 
 同样要求提前配置好虚拟环境和 `.env` 文件。本地 PDF 分析需要将 PDF 放在项目根目录的 `papers` 文件夹中。
 
@@ -256,6 +263,15 @@ python src/main.py --clear-cache translation
 - 批量模式结果保存在 `results/` 目录，文件名如 `arxiv_analysis_2025-02-07.md`
 - 单论文分析结果文件名如 `arxiv_2401.12345_2025-02-07_22-56-45.md`
 - 本地 PDF 分析结果文件名如 `pdf_some_paper_2025-02-07_22-56-45.md`
+- 单论文和本地 PDF 的结果 frontmatter 会记录 `effective_model`、`thinking_applied`、`fallback_used`、`reasoning_content_present`、`structured_output_validated`
+- 如果 `thinking_applied: true` 且 `reasoning_content_present: true`，说明本次分析确实进入了 reasoning 路径，而不是仅仅改了 prompt
+
+### 结构化输出与思考模式
+
+- priority 1 的完整论文分析与本地 PDF 分析不再依赖 prompt 直接输出最终 Markdown，而是先生成 Pydantic 结构化对象，再由本地代码渲染固定的四段分析结构
+- 主题分类会先返回结构化的 `priority/reason`，摘要翻译会先返回结构化的 `chinese_title/abstract_translation`
+- 如果 provider / model 的 thinking 配置不被接受，请求会自动回退到普通模式，并在结果元数据里写入 `fallback_used`
+- 目前项目用 `LiteLLM` 统一多 provider transport，用 `Instructor` 约束结构化输出；这样即使不同服务商的 thinking 开启方式不同，也能在仓库内部用统一接口处理
 
 ### 邮件配置
 支持主流邮箱服务：

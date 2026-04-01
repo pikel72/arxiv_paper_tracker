@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from analyzer import extract_analysis_title, render_analysis_body
+from analyzer import StructuredPaperAnalysis, extract_analysis_title, render_analysis_body, render_structured_analysis_markdown
 
 
 def test_extract_and_render_old_heading_style():
@@ -65,8 +65,25 @@ def test_extract_bold_translation_title():
     assert extract_analysis_title(sample, "fallback") == "广义表面准地转方程解映射规律性分析"
 
 
+def test_render_structured_analysis_markdown():
+    structured = StructuredPaperAnalysis(
+        chinese_title="中文标题",
+        research_background="背景段落",
+        main_results="结果段落",
+        methods_and_tools="方法段落",
+        comparison_with_previous_work="比较段落",
+    )
+
+    rendered = render_structured_analysis_markdown(structured)
+    assert rendered.startswith("# 中文标题")
+    assert "### 1. 研究对象和背景" in rendered
+    assert "### 4. 与之前工作的比较" in rendered
+    assert "比较段落" in rendered
+
+
 if __name__ == "__main__":
     test_extract_and_render_old_heading_style()
     test_extract_and_render_plain_title_style()
     test_extract_bold_translation_title()
+    test_render_structured_analysis_markdown()
     print("analysis formatting tests passed")

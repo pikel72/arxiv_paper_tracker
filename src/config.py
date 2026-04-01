@@ -1,13 +1,28 @@
 # config.py - 配置文件
 
-import os
 import logging
+import os
 from pathlib import Path
+
+import instructor
 from dotenv import load_dotenv
+from litellm import completion
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+def _get_optional_int(name):
+    value = os.getenv(name)
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        logger.warning("环境变量 %s 不是有效整数，将忽略: %s", name, value)
+        return None
+
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -23,6 +38,9 @@ CUSTOM_API_BASE = os.getenv("CUSTOM_API_BASE")
 CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")
 AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")
+ANALYSIS_THINKING_MODEL = os.getenv("ANALYSIS_THINKING_MODEL")
+ANALYSIS_THINKING_BUDGET = _get_optional_int("ANALYSIS_THINKING_BUDGET")
+ANALYSIS_THINKING_EFFORT = os.getenv("ANALYSIS_THINKING_EFFORT")
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
@@ -45,19 +63,19 @@ SEARCH_DAYS = int(os.getenv("SEARCH_DAYS", "3"))
 default_priority_topics = [
     "流体力学中偏微分方程的数学理论",
     "Navier-Stokes方程",
-    "Euler方程", 
+    "Euler方程",
     "Prandtl方程",
     "湍流",
-    "涡度"
+    "涡度",
 ]
 
 default_secondary_topics = [
     "色散偏微分方程的数学理论",
-    "双曲偏微分方程的数学理论", 
+    "双曲偏微分方程的数学理论",
     "调和分析",
     "极大算子",
     "椭圆偏微分方程",
-    "抛物偏微分方程"
+    "抛物偏微分方程",
 ]
 
 PRIORITY_TOPICS = os.getenv("PRIORITY_TOPICS", "|".join(default_priority_topics)).split("|")
@@ -69,136 +87,384 @@ MAX_THREADS = int(os.getenv("MAX_THREADS", "5"))
 
 EMAIL_SUBJECT_PREFIX = os.getenv("EMAIL_SUBJECT_PREFIX", "ArXiv论文分析报告")
 
+STRUCTURED_MODE_MAP = {
+    "json": instructor.Mode.JSON,
+    "tools": instructor.Mode.TOOLS,
+    "tools_strict": instructor.Mode.TOOLS_STRICT,
+}
+
 PROVIDER_CONFIG = {
     "deepseek": {
         "base_url": "https://api.deepseek.com/v1",
         "api_key": DEEPSEEK_API_KEY,
-        "thinking_support": "native",
+        "thinking_support": "model",
+        "default_thinking_model": "deepseek-reasoner",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
     "openai": {
         "base_url": "https://api.openai.com/v1",
         "api_key": OPENAI_API_KEY,
-        "thinking_support": "native",
+        "thinking_support": "model",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
     "glm": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4/",
         "api_key": GLM_API_KEY,
-        "thinking_support": "none",
+        "thinking_support": "model",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
     "qwen": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "api_key": QWEN_API_KEY,
         "thinking_support": "enable_thinking",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
     "doubao": {
         "base_url": DOUBAO_API_BASE or "https://ark.cn-beijing.volces.com/api/v3",
         "api_key": DOUBAO_API_KEY,
-        "thinking_support": "none",
+        "thinking_support": "model",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
     "kimi": {
         "base_url": KIMI_API_BASE or "https://api.moonshot.cn/v1",
         "api_key": KIMI_API_KEY,
-        "thinking_support": "native",
+        "thinking_support": "model",
+        "default_thinking_model": "kimi-k2-thinking",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "api_key": OPENROUTER_API_KEY,
-        "thinking_support": "none",
+        "thinking_support": "reasoning",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
     "siliconflow": {
         "base_url": "https://api.siliconflow.cn/v1",
         "api_key": SILICONFLOW_API_KEY,
-        "thinking_support": "none",
+        "thinking_support": "model",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
     "custom": {
         "base_url": CUSTOM_API_BASE,
         "api_key": CUSTOM_API_KEY,
-        "thinking_support": "none",
+        "thinking_support": "model",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
     },
 }
 
 
+def _read_attr_or_key(obj, name, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _coerce_text_block(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            text = _read_attr_or_key(item, "text")
+            if text:
+                parts.append(str(text))
+                continue
+            content = _read_attr_or_key(item, "content")
+            if content:
+                parts.append(str(content))
+                continue
+            parts.append(str(item))
+        return "\n".join(part for part in parts if part).strip()
+    return str(value)
+
+
 class AIClient:
-    """通用AI客户端，支持多个AI提供商和 thinking mode"""
-    
     def __init__(self, provider=None, model=None):
-        from openai import OpenAI
-        
         self.provider = provider or AI_PROVIDER
         self.model = model or AI_MODEL
-        
+
         if self.provider not in PROVIDER_CONFIG:
             raise ValueError(f"不支持的AI提供商: {self.provider}")
-        
-        config = PROVIDER_CONFIG[self.provider]
-        self.thinking_support = config["thinking_support"]
-        
-        self.client = OpenAI(
-            api_key=config["api_key"],
-            base_url=config["base_url"],
-        )
-    
+
+        self.provider_config = PROVIDER_CONFIG[self.provider]
+        self.thinking_support = self.provider_config["thinking_support"]
+        self.completion_fn = completion
+
     def chat_completion(self, messages, thinking_mode=False, **kwargs):
-        """统一的聊天完成接口，包含失败重试机制"""
-        content, _ = self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)
+        content, _, _ = self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)
         return content
-    
-    def chat_completion_with_usage(self, messages, thinking_mode=False, **kwargs):
-        """统一的聊天完成接口，返回内容和用量统计"""
-        return self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)
-    
-    def _do_chat_completion(self, messages, thinking_mode=False, **kwargs):
-        """内部实现：统一的聊天完成接口，包含失败重试机制"""
-        import time
+
+    def chat_completion_with_usage(self, messages, thinking_mode=False, return_response_state=False, **kwargs):
+        content, usage, response_state = self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)
+        if return_response_state:
+            return content, usage, response_state
+        return content, usage
+
+    def structured_chat_completion_with_usage(
+        self,
+        messages,
+        response_model,
+        thinking_mode=False,
+        return_response_state=False,
+        **kwargs,
+    ):
+        result, usage, response_state = self._do_chat_completion(
+            messages,
+            thinking_mode=thinking_mode,
+            response_model=response_model,
+            structured=True,
+            **kwargs,
+        )
+        if return_response_state:
+            return result, usage, response_state
+        return result, usage
+
+    def _looks_like_thinking_model(self, model_name):
+        if not model_name:
+            return False
+        normalized = model_name.lower()
+        if normalized.startswith(("o1", "o3", "o4")):
+            return True
+        markers = ("reasoner", "reasoning", "thinking", "r1", "qwq")
+        return any(marker in normalized for marker in markers)
+
+    def get_analysis_request_config(self, thinking_mode=False):
+        config = {
+            "provider": self.provider,
+            "effective_model": self.model,
+            "thinking_requested": bool(thinking_mode),
+            "thinking_applied": False,
+            "thinking_support": self.thinking_support,
+            "thinking_budget": None,
+            "thinking_effort": None,
+            "extra_body": {},
+            "reasoning": None,
+            "litellm_provider": self.provider_config.get("litellm_provider", "openai"),
+            "structured_mode": self.provider_config.get("structured_mode", "json"),
+        }
+
+        if not thinking_mode:
+            return config
+
+        thinking_model = ANALYSIS_THINKING_MODEL
+        default_thinking_model = self.provider_config.get("default_thinking_model")
+
+        if self.thinking_support == "enable_thinking":
+            config["thinking_applied"] = True
+            config["effective_model"] = thinking_model or self.model
+            if not thinking_model or thinking_model == self.model:
+                config["extra_body"]["enable_thinking"] = True
+                if ANALYSIS_THINKING_BUDGET is not None:
+                    config["extra_body"]["thinking_budget"] = ANALYSIS_THINKING_BUDGET
+            elif ANALYSIS_THINKING_BUDGET is not None:
+                config["extra_body"]["thinking_budget"] = ANALYSIS_THINKING_BUDGET
+            config["thinking_budget"] = ANALYSIS_THINKING_BUDGET
+            return config
+
+        if self.thinking_support == "reasoning":
+            config["thinking_applied"] = True
+            config["effective_model"] = thinking_model or self.model
+            reasoning = {"enabled": True}
+            if ANALYSIS_THINKING_EFFORT:
+                reasoning["effort"] = ANALYSIS_THINKING_EFFORT
+                config["thinking_effort"] = ANALYSIS_THINKING_EFFORT
+            if ANALYSIS_THINKING_BUDGET is not None:
+                reasoning["max_tokens"] = ANALYSIS_THINKING_BUDGET
+                config["thinking_budget"] = ANALYSIS_THINKING_BUDGET
+            config["reasoning"] = reasoning
+            return config
+
+        if self.thinking_support == "model":
+            effective_model = thinking_model or default_thinking_model
+            if not effective_model and self._looks_like_thinking_model(self.model):
+                effective_model = self.model
+            if effective_model:
+                config["thinking_applied"] = True
+                config["effective_model"] = effective_model
+            return config
+
+        return config
+
+    def _create_kwargs(self, messages, request_config, kwargs):
+        create_kwargs = {
+            "model": request_config["effective_model"],
+            "messages": messages,
+            "api_key": self.provider_config["api_key"],
+            "api_base": self.provider_config["base_url"],
+            "base_url": self.provider_config["base_url"],
+            "custom_llm_provider": request_config["litellm_provider"],
+            **kwargs,
+        }
+        if request_config["extra_body"]:
+            create_kwargs["extra_body"] = request_config["extra_body"]
+        if request_config["reasoning"]:
+            create_kwargs["reasoning"] = request_config["reasoning"]
+        return create_kwargs
+
+    def _is_thinking_unsupported_error(self, error_message):
+        normalized = (error_message or "").lower()
+        keywords = [
+            "unsupported",
+            "not support",
+            "does not support",
+            "unknown parameter",
+            "unrecognized request argument",
+            "invalid parameter",
+            "invalid_request_error",
+            "reasoning",
+            "enable_thinking",
+            "model not found",
+            "no such model",
+        ]
+        return any(keyword in normalized for keyword in keywords)
+
+    def _usage_to_dict(self, usage):
+        if not usage:
+            return {}
+        prompt_tokens = _read_attr_or_key(usage, "prompt_tokens", 0) or 0
+        completion_tokens = _read_attr_or_key(usage, "completion_tokens", 0) or 0
+        total_tokens = _read_attr_or_key(usage, "total_tokens", 0) or 0
+        usage_dict = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        }
+        reasoning_tokens = _read_attr_or_key(_read_attr_or_key(usage, "completion_tokens_details"), "reasoning_tokens")
+        if reasoning_tokens is not None:
+            usage_dict["reasoning_tokens"] = reasoning_tokens
+        return usage_dict
+
+    def _extract_reasoning_content(self, response):
+        choices = _read_attr_or_key(response, "choices", []) or []
+        if not choices:
+            return ""
+        message = _read_attr_or_key(choices[0], "message")
+        reasoning_content = _read_attr_or_key(message, "reasoning_content")
+        return _coerce_text_block(reasoning_content).strip()
+
+    def _extract_content_and_usage(self, response):
+        choices = _read_attr_or_key(response, "choices", []) or []
+        if not choices:
+            return "", {}
+        message = _read_attr_or_key(choices[0], "message")
+        content = _coerce_text_block(_read_attr_or_key(message, "content")).strip()
+        usage = self._usage_to_dict(_read_attr_or_key(response, "usage"))
+        return content, usage
+
+    def _build_response_state(self, request_config, response, fallback_used=False, fallback_reason=None):
+        reasoning_content = self._extract_reasoning_content(response)
+        returned_model = _read_attr_or_key(response, "model")
+        return {
+            "provider": request_config["provider"],
+            "effective_model": returned_model or request_config["effective_model"],
+            "thinking_requested": request_config["thinking_requested"],
+            "thinking_applied": request_config["thinking_applied"],
+            "thinking_budget": request_config["thinking_budget"],
+            "thinking_effort": request_config["thinking_effort"],
+            "fallback_used": bool(fallback_used),
+            "fallback_reason": fallback_reason or "",
+            "reasoning_content_present": bool(reasoning_content),
+            "reasoning_content_length": len(reasoning_content),
+            "structured_output_mode": request_config.get("structured_mode"),
+        }
+
+    def _get_structured_client(self, request_config):
+        structured_mode = request_config.get("structured_mode", "json")
+        mode = STRUCTURED_MODE_MAP.get(structured_mode, instructor.Mode.JSON)
+        return instructor.from_litellm(self.completion_fn, mode=mode)
+
+    def _do_chat_completion(self, messages, thinking_mode=False, response_model=None, structured=False, **kwargs):
         import random
-        
+        import time
+
         max_retries = 3
         backoff_factor = 2
-        
-        extra_body = kwargs.pop("extra_body", None) or {}
-        
-        if thinking_mode and self.thinking_support == "enable_thinking":
-            extra_body["enable_thinking"] = True
-            logger.info(f"启用 thinking mode (enable_thinking=True) for {self.provider}")
-        elif thinking_mode and self.thinking_support == "native":
-            logger.info(f"启用 thinking mode (native) for {self.provider}/{self.model}")
-        elif thinking_mode:
-            logger.warning(f"提供商 {self.provider} 不支持 thinking mode，将使用普通模式")
-        
-        for attempt in range(max_retries):
-            try:
-                create_kwargs = {
-                    "model": self.model,
-                    "messages": messages,
-                    **kwargs
-                }
-                if extra_body:
-                    create_kwargs["extra_body"] = extra_body
-                
-                response = self.client.chat.completions.create(**create_kwargs)
-                
-                content = response.choices[0].message.content
-                usage = {}
-                if response.usage:
-                    usage = {
-                        "prompt_tokens": response.usage.prompt_tokens or 0,
-                        "completion_tokens": response.usage.completion_tokens or 0,
-                        "total_tokens": response.usage.total_tokens or 0,
-                    }
-                return content, usage
-            except Exception as e:
-                error_msg = str(e).lower()
-                is_rate_limit = any(keyword in error_msg for keyword in ["rate limit", "too many requests", "429"])
-                
-                if attempt < max_retries - 1:
-                    wait_time = (backoff_factor ** attempt) + random.uniform(0, 1)
-                    if is_rate_limit:
-                        wait_time += 5
-                    
-                    logger.warning(f"AI API调用失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}。将在 {wait_time:.1f}s 后重试...")
-                    time.sleep(wait_time)
-                else:
-                    raise Exception(f"AI API调用在 {max_retries} 次尝试后仍然失败 ({self.provider}): {str(e)}")
+        base_kwargs = dict(kwargs)
+        requested_config = self.get_analysis_request_config(thinking_mode=thinking_mode)
+
+        if thinking_mode and not requested_config["thinking_applied"]:
+            logger.warning("提供商 %s/%s 当前没有可用的思考模式能力，将使用普通模式", self.provider, self.model)
+
+        request_sequence = [requested_config]
+        if requested_config["thinking_applied"]:
+            request_sequence.append(self.get_analysis_request_config(thinking_mode=False))
+
+        fallback_reason = ""
+        for index, request_config in enumerate(request_sequence):
+            for attempt in range(max_retries):
+                try:
+                    create_kwargs = self._create_kwargs(messages, request_config, base_kwargs)
+                    if structured:
+                        structured_client = self._get_structured_client(request_config)
+                        result, raw_response = structured_client.create_with_completion(
+                            response_model=response_model,
+                            max_retries=2,
+                            **create_kwargs,
+                        )
+                        usage = self._usage_to_dict(_read_attr_or_key(raw_response, "usage"))
+                        response_state = self._build_response_state(
+                            request_config,
+                            raw_response,
+                            fallback_used=index > 0,
+                            fallback_reason=fallback_reason,
+                        )
+                        return result, usage, response_state
+
+                    response = self.completion_fn(**create_kwargs)
+                    content, usage = self._extract_content_and_usage(response)
+                    response_state = self._build_response_state(
+                        request_config,
+                        response,
+                        fallback_used=index > 0,
+                        fallback_reason=fallback_reason,
+                    )
+                    return content, usage, response_state
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    is_rate_limit = any(keyword in error_msg for keyword in ["rate limit", "too many requests", "429"])
+                    is_thinking_fallback = (
+                        index == 0
+                        and request_config["thinking_applied"]
+                        and self._is_thinking_unsupported_error(str(e))
+                    )
+
+                    if is_thinking_fallback:
+                        fallback_reason = str(e)
+                        logger.warning(
+                            "提供商 %s/%s 不支持当前思考模式配置，将回退到普通模式: %s",
+                            self.provider,
+                            request_config["effective_model"],
+                            str(e),
+                        )
+                        break
+
+                    if attempt < max_retries - 1:
+                        wait_time = (backoff_factor ** attempt) + random.uniform(0, 1)
+                        if is_rate_limit:
+                            wait_time += 5
+                        logger.warning(
+                            "AI API调用失败 (尝试 %s/%s): %s。将在 %.1fs 后重试...",
+                            attempt + 1,
+                            max_retries,
+                            str(e),
+                            wait_time,
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        raise Exception(f"AI API调用在 {max_retries} 次尝试后仍然失败 ({self.provider}): {str(e)}")
 
 
 ai_client = AIClient(AI_PROVIDER, AI_MODEL)

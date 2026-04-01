@@ -1,5 +1,18 @@
+# utils.py - 工具函数模块
+
+import datetime
+import logging
+from pathlib import Path
+
+from analyzer import extract_analysis_title, render_analysis_body
+from config import RESULTS_DIR
+
+logger = logging.getLogger(__name__)
+
+
 def _extract_chinese_title(text: str) -> str:
     return extract_analysis_title(text, "").strip()
+
 
 def _extract_abstract_translation(text: str) -> str:
     if not text or "**摘要翻译**:" not in text:
@@ -19,24 +32,81 @@ def _extract_abstract_translation(text: str) -> str:
             return "\n".join(tail).strip()
     return ""
 
+
 def _get_paper_comment(paper) -> str:
     comment = getattr(paper, "comment", None) or getattr(paper, "comments", None) or getattr(paper, "arxiv_comment", None)
     if comment:
         return str(comment).strip()
     return ""
 
+
 def _strip_analysis_heading(text: str) -> str:
     return render_analysis_body(text)
+
 
 def _resolve_priority_title(title: str, analysis: str, translation: str) -> str:
     return _extract_chinese_title(translation) or _extract_chinese_title(analysis) or title
 
-def write_single_analysis(paper, analysis, filename: str = None, usage: dict = None, thinking_mode: bool = False):
-    """将单论文分析结果写入 Markdown 文件，结构更简洁。"""
+
+def _split_priority_entry(entry):
+    if len(entry) >= 3 and isinstance(entry[2], dict):
+        return entry[0], entry[1], entry[2]
+    return entry[0], entry[1], {}
+
+
+def _write_analysis_metadata_block(f, analysis_meta, ai_model):
+    if not analysis_meta:
+        return
+    if analysis_meta.get("provider"):
+        f.write(f"ai_provider: {analysis_meta.get('provider')}\n")
+    if analysis_meta.get("effective_model"):
+        f.write(f"effective_model: {analysis_meta.get('effective_model')}\n")
+    else:
+        f.write(f"effective_model: {ai_model}\n")
+    f.write(f"thinking_applied: {bool(analysis_meta.get('thinking_applied'))}\n")
+    f.write(f"fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
+    f.write(f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
+    f.write(f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
+    f.write(f"from_cache: {bool(analysis_meta.get('from_cache'))}\n")
+
+
+def _write_usage_block(f, usage):
+    if not usage:
+        return
+    f.write("token_usage:\n")
+    f.write(f"  prompt_tokens: {usage.get('prompt_tokens', 0)}\n")
+    f.write(f"  completion_tokens: {usage.get('completion_tokens', 0)}\n")
+    f.write(f"  total_tokens: {usage.get('total_tokens', 0)}\n")
+    if "reasoning_tokens" in usage:
+        f.write(f"  reasoning_tokens: {usage.get('reasoning_tokens', 0)}\n")
+
+
+def _format_analysis_audit_line(analysis_meta, ai_model):
+    if not analysis_meta:
+        return ""
+    return (
+        f"**分析审计**: provider={analysis_meta.get('provider', 'unknown')}, "
+        f"model={analysis_meta.get('effective_model', ai_model)}, "
+        f"thinking={bool(analysis_meta.get('thinking_applied'))}, "
+        f"fallback={bool(analysis_meta.get('fallback_used'))}, "
+        f"reasoning_content={bool(analysis_meta.get('reasoning_content_present'))}, "
+        f"structured={bool(analysis_meta.get('structured_output_validated'))}\n\n"
+    )
+
+
+def write_single_analysis(
+    paper,
+    analysis,
+    filename: str = None,
+    usage: dict = None,
+    analysis_meta: dict = None,
+    thinking_mode: bool = False,
+):
     import re
+
     today = datetime.datetime.now()
-    date_str = today.strftime('%Y-%m-%d')
-    time_str = today.strftime('%H-%M-%S')
+    date_str = today.strftime("%Y-%m-%d")
+    time_str = today.strftime("%H-%M-%S")
     if filename:
         md_file = RESULTS_DIR / filename
     else:
@@ -50,26 +120,24 @@ def write_single_analysis(paper, analysis, filename: str = None, usage: dict = N
     analysis_body = _strip_analysis_heading(analysis)
     abstract_translation = _extract_abstract_translation(translation)
     paper_comment = _get_paper_comment(paper)
-    datetime_str = today.strftime('%Y-%m-%d %H:%M:%S')
+    datetime_str = today.strftime("%Y-%m-%d %H:%M:%S")
     from config import AI_MODEL
-    
-    with open(md_file, 'w', encoding='utf-8') as f:
-        f.write(f"---\n")
+
+    with open(md_file, "w", encoding="utf-8") as f:
+        f.write("---\n")
         f.write(f"title: \"{chinese_title if chinese_title else title}\"\n")
         f.write(f"date: {datetime_str}\n")
         f.write(f"description: {', '.join(author_names)}\n")
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"arxiv_id: {paper.get_short_id()}\n")
         f.write(f"thinking_mode: {thinking_mode}\n")
-        if usage:
-            f.write(f"token_usage:\n")
-            f.write(f"  prompt_tokens: {usage.get('prompt_tokens', 0)}\n")
-            f.write(f"  completion_tokens: {usage.get('completion_tokens', 0)}\n")
-            f.write(f"  total_tokens: {usage.get('total_tokens', 0)}\n")
-        f.write(f"---\n")
+        _write_analysis_metadata_block(f, analysis_meta or {}, AI_MODEL)
+        _write_usage_block(f, usage or {})
+        f.write("---\n")
         f.write(f"# {chinese_title if chinese_title else title}\n")
         if chinese_title != title:
             f.write(f"{title}\n\n")
+        f.write(_format_analysis_audit_line(analysis_meta or {}, AI_MODEL))
         f.write(f"**作者**: {', '.join(author_names)}\n\n")
         f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
         f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
@@ -81,40 +149,27 @@ def write_single_analysis(paper, analysis, filename: str = None, usage: dict = N
         f.write(f"**Comment**: {paper_comment if paper_comment else '无'}\n\n")
         f.write(f"**链接**: {paper.entry_id}\n\n")
         f.write(f"{analysis_body}\n\n")
-    logger.info(f"单论文分析结果已写入 {md_file.absolute()}")
+    logger.info("单论文分析结果已写入 %s", md_file.absolute())
     return md_file
-# utils.py - 工具函数模块
 
-import datetime
-import logging
-from pathlib import Path
-
-from analyzer import extract_analysis_title, render_analysis_body
-from config import RESULTS_DIR
-
-logger = logging.getLogger(__name__)
 
 def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers=None, filename: str = None):
-    """将分析结果写入带时间戳的.md文件。可选参数 filename 指定自定义文件名（含后缀）。"""
     today = datetime.datetime.now()
-    date_str = today.strftime('%Y-%m-%d')
-    time_str = today.strftime('%H-%M-%S')
-    datetime_str = today.strftime('%Y-%m-%d %H:%M:%S')
+    date_str = today.strftime("%Y-%m-%d")
+    time_str = today.strftime("%H-%M-%S")
+    datetime_str = today.strftime("%Y-%m-%d %H:%M:%S")
     from config import AI_MODEL
 
-    # 创建文件名：如果传入 filename 则使用它，否则使用带时间戳的默认名
     if filename:
         conclusion_file = RESULTS_DIR / filename
     else:
         filename = f"arxiv_analysis_{date_str}_{time_str}.md"
         conclusion_file = RESULTS_DIR / filename
-    
-    # 确保结果目录存在
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # 写入分析结果到新文件
-    with open(conclusion_file, 'w', encoding='utf-8') as f:
-        f.write(f"---\n")
+
+    with open(conclusion_file, "w", encoding="utf-8") as f:
+        f.write("---\n")
         f.write(f"title: \"{today.strftime('%Y年%m月%d日')}论文分析\"\n")
         f.write(f"date: {datetime_str}\n")
         f.write(f"description: 共有 {len(priority_analyses)} 篇重点关注论文, {len(secondary_analyses)} 篇论文可以了解")
@@ -127,27 +182,27 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
         if irrelevant_papers:
             f.write(f"**不相关论文数量**: {len(irrelevant_papers)}\n")
         f.write("\n")
-        
-        # 写入重点关注的论文（完整分析）
+
         if priority_analyses:
             f.write("# 重点关注论文（完整分析）\n\n")
-            for i, (paper, analysis) in enumerate(priority_analyses, 1):
+            for i, entry in enumerate(priority_analyses, 1):
+                paper, analysis, analysis_meta = _split_priority_entry(entry)
                 author_names = [author.name for author in paper.authors]
-                # 显示中文标题（二级标题），英文标题加粗显示
                 import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
-                
+
                 from translator import translate_abstract_with_deepseek
                 translation = translate_abstract_with_deepseek(paper, translate_title_only=False, use_cache=True)
                 chinese_title = _resolve_priority_title(title, analysis, translation)
                 analysis_body = _strip_analysis_heading(analysis)
                 abstract_translation = _extract_abstract_translation(translation)
                 paper_comment = _get_paper_comment(paper)
-                
+
                 f.write(f"## {i}. {chinese_title if chinese_title else title}\n\n")
                 if chinese_title != title:
                     f.write(f"{title}\n\n")
-                
+
+                f.write(_format_analysis_audit_line(analysis_meta, AI_MODEL))
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
@@ -160,23 +215,19 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 f.write(f"**链接**: {paper.entry_id}\n\n")
                 f.write(f"{analysis_body}\n\n")
                 f.write("---\n\n")
-        
-        # 写入了解领域的论文（摘要翻译）
+
         if secondary_analyses:
             f.write("# 了解领域论文（摘要翻译）\n\n")
             for i, (paper, translation) in enumerate(secondary_analyses, 1):
                 author_names = [author.name for author in paper.authors]
-                
-                # 显示中文标题（二级标题），英文标题加粗显示
                 import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
-                
                 chinese_title = _extract_chinese_title(translation)
-                
+
                 f.write(f"## {i}. {chinese_title if chinese_title else title}\n\n")
                 if chinese_title:
                     f.write(f"**{title}**\n\n")
-                
+
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
@@ -184,23 +235,19 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 f.write(f"**链接**: {paper.entry_id}\n\n")
                 f.write(f"### 摘要翻译\n\n{translation}\n\n")
                 f.write("---\n\n")
-        
-        # 写入不相关论文（基本信息）
+
         if irrelevant_papers:
             f.write("# 不相关论文（基本信息）\n\n")
             for i, (paper, reason, title_translation) in enumerate(irrelevant_papers, 1):
                 author_names = [author.name for author in paper.authors]
-                
-                # 显示中文标题（二级标题），英文标题加粗显示
                 import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
-                
                 chinese_title = _extract_chinese_title(title_translation)
-                
+
                 f.write(f"## {i}. {chinese_title if chinese_title else title}\n\n")
                 if chinese_title:
                     f.write(f"**{title}**\n\n")
-                
+
                 f.write(f"**作者**: {', '.join(author_names)}\n\n")
                 f.write(f"**类别**: {', '.join(paper.categories)}\n\n")
                 f.write(f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n\n")
@@ -208,45 +255,45 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 f.write(f"**链接**: {paper.entry_id}\n\n")
                 f.write(f"**摘要**: {paper.summary}\n\n")
                 f.write("---\n\n")
-    
-    logger.info(f"分析结果已写入 {conclusion_file.absolute()}")
+
+    logger.info("分析结果已写入 %s", conclusion_file.absolute())
     return conclusion_file
 
+
 def delete_pdf(pdf_path):
-    """删除PDF文件"""
     try:
         if pdf_path.exists():
             pdf_path.unlink()
-            logger.info(f"已删除PDF文件: {pdf_path}")
+            logger.info("已删除PDF文件: %s", pdf_path)
         else:
-            logger.info(f"PDF文件不存在，无需删除: {pdf_path}")
+            logger.info("PDF文件不存在，无需删除: %s", pdf_path)
     except Exception as e:
-        logger.error(f"删除PDF文件失败 {pdf_path}: {str(e)}")
+        logger.error("删除PDF文件失败 %s: %s", pdf_path, str(e))
+
 
 def download_paper(paper, output_dir):
-    """将论文PDF下载到指定目录，包含重试机制"""
-    import time
     import random
+    import time
+
     output_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = output_dir / f"{paper.get_short_id().replace('/', '_')}.pdf"
-    
-    # 如果已下载则跳过
+
     if pdf_path.exists():
-        logger.info(f"论文已下载: {pdf_path}")
+        logger.info("论文已下载: %s", pdf_path)
         return pdf_path
-    
+
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            logger.info(f"正在下载 (尝试 {attempt + 1}/{max_retries}): {paper.title}")
+            logger.info("正在下载 (尝试 %s/%s): %s", attempt + 1, max_retries, paper.title)
             paper.download_pdf(str(pdf_path))
-            logger.info(f"已下载到 {pdf_path}")
+            logger.info("已下载到 %s", pdf_path)
             return pdf_path
         except Exception as e:
             if attempt < max_retries - 1:
                 wait_time = (attempt + 1) * 5 + random.uniform(0, 2)
-                logger.warning(f"下载论文失败 {paper.title}: {str(e)}。将在 {wait_time:.1f}s 后重试...")
+                logger.warning("下载论文失败 %s: %s。将在 %.1fs 后重试...", paper.title, str(e), wait_time)
                 time.sleep(wait_time)
             else:
-                logger.error(f"下载论文在 {max_retries} 次尝试后仍然失败 {paper.title}: {str(e)}")
+                logger.error("下载论文在 %s 次尝试后仍然失败 %s: %s", max_retries, paper.title, str(e))
                 return None

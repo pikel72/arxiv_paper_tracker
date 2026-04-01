@@ -55,6 +55,9 @@ jobs:
         # AI模型选择配置
         AI_PROVIDER: ${{ vars.AI_PROVIDER || 'qwen' }}
         AI_MODEL: ${{ vars.AI_MODEL || 'qwen-plus' }}
+        ANALYSIS_THINKING_MODEL: ${{ vars.ANALYSIS_THINKING_MODEL }}
+        ANALYSIS_THINKING_BUDGET: ${{ vars.ANALYSIS_THINKING_BUDGET }}
+        ANALYSIS_THINKING_EFFORT: ${{ vars.ANALYSIS_THINKING_EFFORT }}
         MAX_THREADS: ${{ vars.MAX_THREADS || '5' }}
         # QQ邮箱服务器配置
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}

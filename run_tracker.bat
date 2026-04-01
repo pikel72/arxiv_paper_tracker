@@ -67,7 +67,11 @@ goto menu
 
 :run_all
 echo === Running Full Analysis (Auto Date) ===
-"%PYTHON%" src\main.py || goto fail
+if "%THINKING_MODE%"=="1" (
+    "%PYTHON%" src\main.py --thinking || goto fail
+) else (
+    "%PYTHON%" src\main.py || goto fail
+)
 echo Operation completed.
 pause
 goto menu
@@ -82,7 +86,11 @@ if "%date_input%"=="" (
     pause
     goto menu
 )
-"%PYTHON%" src\main.py --date %date_input% || goto fail
+if "%THINKING_MODE%"=="1" (
+    "%PYTHON%" src\main.py --date %date_input% --thinking || goto fail
+) else (
+    "%PYTHON%" src\main.py --date %date_input% || goto fail
+)
 echo Operation completed.
 pause
 goto menu
