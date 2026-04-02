@@ -3,7 +3,17 @@
 import logging
 import re
 
+try:
+    import fitz
+except Exception:
+    fitz = None
+
 import pdfplumber
+try:
+    import tiktoken
+except Exception:
+    tiktoken = None
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cache import (
@@ -479,8 +489,34 @@ def _apply_analysis_cleanup(analysis_blocks: StructuredPaperAnalysis, paper=None
 
 
 def extract_pdf_text(pdf_path, max_pages=10):
+    pymupdf_error = None
+
+    if fitz is not None:
+        try:
+            text_parts = []
+            with fitz.open(pdf_path) as pdf:
+                if max_pages is None:
+                    pages_to_read = len(pdf)
+                else:
+                    pages_to_read = min(len(pdf), max_pages)
+
+                for i in range(pages_to_read):
+                    page_text = (pdf[i].get_text("text") or "").strip()
+                    if page_text:
+                        text_parts.append(f"\n=== 第{i + 1}页 ===\n{page_text}\n")
+
+            text_content = "".join(text_parts)
+            if text_content.strip():
+                logger.info("成功从PDF提取文本, 共%s页, backend=PyMuPDF", pages_to_read)
+                return text_content
+
+            logger.warning("PyMuPDF 未提取到可用文本，将回退到 pdfplumber: %s", pdf_path)
+        except Exception as e:
+            pymupdf_error = str(e)
+            logger.warning("PyMuPDF 文本提取失败，将回退到 pdfplumber: %s", pymupdf_error)
+
     try:
-        text_content = ""
+        text_parts = []
         with pdfplumber.open(pdf_path) as pdf:
             if max_pages is None:
                 pages_to_read = len(pdf.pages)
@@ -489,15 +525,19 @@ def extract_pdf_text(pdf_path, max_pages=10):
 
             for i in range(pages_to_read):
                 page = pdf.pages[i]
-                page_text = page.extract_text()
+                page_text = (page.extract_text() or "").strip()
                 if page_text:
-                    text_content += f"\n=== 第{i + 1}页 ===\n{page_text}\n"
+                    text_parts.append(f"\n=== 第{i + 1}页 ===\n{page_text}\n")
 
-        logger.info("成功从PDF提取文本, 共%s页", pages_to_read)
+        text_content = "".join(text_parts)
+        logger.info("成功从PDF提取文本, 共%s页, backend=pdfplumber", pages_to_read)
         return text_content
     except Exception as e:
-        logger.error("PDF文本提取失败 %s: %s", pdf_path, str(e))
-        return f"PDF文本提取失败: {str(e)}"
+        error_message = str(e)
+        if pymupdf_error:
+            error_message = f"PyMuPDF: {pymupdf_error}; pdfplumber: {error_message}"
+        logger.error("PDF文本提取失败 %s: %s", pdf_path, error_message)
+        return f"PDF文本提取失败: {error_message}"
 
 
 def _build_structured_analysis_messages(pdf_content, paper=None, title=None):
@@ -573,12 +613,78 @@ def _build_fallback_analysis_messages(pdf_content, paper=None, title=None):
     ]
 
 
+def _get_token_encoder(model_name=None):
+    if tiktoken is None:
+        return None
+
+    candidates = []
+    normalized_model = str(model_name or "").strip()
+    if normalized_model:
+        candidates.append(normalized_model)
+        if "/" in normalized_model:
+            candidates.append(normalized_model.rsplit("/", 1)[-1])
+
+    for candidate in candidates:
+        try:
+            return tiktoken.encoding_for_model(candidate)
+        except Exception:
+            continue
+
+    for encoding_name in ("o200k_base", "cl100k_base"):
+        try:
+            return tiktoken.get_encoding(encoding_name)
+        except Exception:
+            continue
+    return None
+
+
+def _estimate_text_tokens(text, model_name=None):
+    content = str(text or "")
+    if not content:
+        return 0
+
+    encoder = _get_token_encoder(model_name=model_name)
+    if encoder is not None:
+        try:
+            return len(encoder.encode(content))
+        except Exception:
+            pass
+
+    return max(1, len(content) // 4)
+
+
+def _estimate_message_tokens(messages, model_name=None):
+    total = 0
+    for message in messages or []:
+        role = ""
+        content = ""
+        if isinstance(message, dict):
+            role = str(message.get("role") or "")
+            content = str(message.get("content") or "")
+        else:
+            role = str(getattr(message, "role", "") or "")
+            content = str(getattr(message, "content", "") or "")
+        total += _estimate_text_tokens(role, model_name=model_name)
+        total += _estimate_text_tokens(content, model_name=model_name)
+        total += 4
+    return total
+
+
+def _count_extracted_pdf_pages(text):
+    if not text:
+        return 0
+    return len(re.findall(r"^=== 第\d+页 ===$", str(text), flags=re.MULTILINE))
+
+
 def _finalize_analysis_meta(response_state, structured_validated, structured_fallback, from_cache=False, structured_error=""):
     meta = dict(response_state or {})
     meta["analysis_schema_version"] = ANALYSIS_SCHEMA_VERSION
     meta["structured_output_validated"] = bool(structured_validated)
     meta["structured_output_fallback"] = bool(structured_fallback)
     meta["from_cache"] = bool(from_cache)
+    meta.setdefault("estimated_prompt_tokens", None)
+    meta.setdefault("pdf_text_length", None)
+    meta.setdefault("pdf_text_pages", None)
     meta.setdefault("cleanup_requested", False)
     meta.setdefault("cleanup_attempted", False)
     meta.setdefault("cleanup_applied", False)
@@ -601,6 +707,9 @@ def _prepare_cached_analysis(request_state, cached_payload):
     analysis_text, cached_meta = cached_payload
     if cached_meta:
         meta = dict(cached_meta)
+        meta.setdefault("estimated_prompt_tokens", None)
+        meta.setdefault("pdf_text_length", None)
+        meta.setdefault("pdf_text_pages", None)
     else:
         meta = _finalize_analysis_meta(
             {
@@ -730,7 +839,7 @@ def check_topic_relevance(paper):
         return 2, f"检查出错, 默认处理: {str(e)}"
 
 
-def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=None):
+def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=None, include_prompt_estimate=False):
     arxiv_id = paper.get_short_id()
 
     request_state = {
@@ -750,6 +859,9 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=N
     try:
         pdf_content = extract_pdf_text(pdf_path, max_pages=max_pages)
         structured_messages = _build_structured_analysis_messages(pdf_content, paper=paper)
+        estimated_prompt_tokens = None
+        if include_prompt_estimate:
+            estimated_prompt_tokens = _estimate_message_tokens(structured_messages, model_name=effective_model)
         effective_thinking = request_state.get("thinking_applied")
         mode_str = " (深度思考模式)" if effective_thinking else ""
         logger.info("正在分析论文%s: %s", mode_str, paper.title)
@@ -802,6 +914,10 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=N
             normalized = render_structured_analysis_markdown(cleaned_blocks)
         usage = _merge_usage(usage, cleanup_usage)
         analysis_meta.update(cleanup_meta)
+        if include_prompt_estimate:
+            analysis_meta["estimated_prompt_tokens"] = estimated_prompt_tokens
+            analysis_meta["pdf_text_length"] = len(pdf_content)
+            analysis_meta["pdf_text_pages"] = _count_extracted_pdf_pages(pdf_content)
 
         logger.info("论文分析完成: %s", paper.title)
         logger.info(
@@ -831,7 +947,7 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=N
         return f"**论文分析出错**: {str(e)}", {}, {}
 
 
-def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, thinking_mode=None):
+def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, thinking_mode=None, include_prompt_estimate=False):
     from pathlib import Path
 
     pdf_path = Path(pdf_path)
@@ -860,6 +976,9 @@ def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, 
             title = pdf_path.stem.replace("_", " ").replace("-", " ")
 
         structured_messages = _build_structured_analysis_messages(pdf_content, title=title)
+        estimated_prompt_tokens = None
+        if include_prompt_estimate:
+            estimated_prompt_tokens = _estimate_message_tokens(structured_messages, model_name=effective_model)
         effective_thinking = request_state.get("thinking_applied")
         mode_str = " (深度思考模式)" if effective_thinking else ""
         logger.info("正在分析 PDF%s: %s", mode_str, pdf_path.name)
@@ -912,6 +1031,10 @@ def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, 
             normalized = render_structured_analysis_markdown(cleaned_blocks)
         usage = _merge_usage(usage, cleanup_usage)
         analysis_meta.update(cleanup_meta)
+        if include_prompt_estimate:
+            analysis_meta["estimated_prompt_tokens"] = estimated_prompt_tokens
+            analysis_meta["pdf_text_length"] = len(pdf_content)
+            analysis_meta["pdf_text_pages"] = _count_extracted_pdf_pages(pdf_content)
 
         logger.info("PDF 分析完成: %s", pdf_path.name)
         logger.info(

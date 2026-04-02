@@ -84,6 +84,12 @@ def _write_analysis_metadata_block(f, analysis_meta, ai_model):
         for line in str(analysis_meta.get("cleanup_validation_error")).splitlines():
             f.write(f"  {line}\n")
     f.write(f"from_cache: {bool(analysis_meta.get('from_cache'))}\n")
+    if analysis_meta.get("estimated_prompt_tokens") is not None:
+        f.write(f"estimated_prompt_tokens: {analysis_meta.get('estimated_prompt_tokens')}\n")
+    if analysis_meta.get("pdf_text_length") is not None:
+        f.write(f"pdf_text_length: {analysis_meta.get('pdf_text_length')}\n")
+    if analysis_meta.get("pdf_text_pages") is not None:
+        f.write(f"pdf_text_pages: {analysis_meta.get('pdf_text_pages')}\n")
 
 
 def _write_usage_block(f, usage):

@@ -332,7 +332,14 @@ def analyze_single_paper(arxiv_id, max_pages=10, thinking_mode=None):
         logger.error("PDF 下载失败，终止分析")
         return
 
-    analysis, usage, analysis_meta = analyze_paper(pdf_path, paper, max_pages=max_pages, use_cache=False, thinking_mode=thinking_mode)
+    analysis, usage, analysis_meta = analyze_paper(
+        pdf_path,
+        paper,
+        max_pages=max_pages,
+        use_cache=False,
+        thinking_mode=thinking_mode,
+        include_prompt_estimate=True,
+    )
 
     safe_id = arxiv_id.replace('/', '_')
     now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -374,6 +381,7 @@ def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=None):
         max_pages=max_pages,
         use_cache=False,
         thinking_mode=thinking_mode,
+        include_prompt_estimate=True,
     )
     
     now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
