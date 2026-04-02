@@ -67,6 +67,7 @@ def _write_analysis_metadata_block(f, analysis_meta, ai_model):
     f.write(f"fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
     f.write(f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
     f.write(f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
+    f.write(f"structured_output_fallback: {bool(analysis_meta.get('structured_output_fallback'))}\n")
     f.write(f"cleanup_requested: {bool(analysis_meta.get('cleanup_requested'))}\n")
     f.write(f"cleanup_attempted: {bool(analysis_meta.get('cleanup_attempted'))}\n")
     f.write(f"cleanup_applied: {bool(analysis_meta.get('cleanup_applied'))}\n")
@@ -75,8 +76,13 @@ def _write_analysis_metadata_block(f, analysis_meta, ai_model):
     if analysis_meta.get("cleanup_effective_model"):
         f.write(f"cleanup_effective_model: {analysis_meta.get('cleanup_effective_model')}\n")
     f.write(f"cleanup_thinking_applied: {bool(analysis_meta.get('cleanup_thinking_applied'))}\n")
+    f.write(f"cleanup_fallback_used: {bool(analysis_meta.get('cleanup_fallback_used'))}\n")
     f.write(f"cleanup_reasoning_content_present: {bool(analysis_meta.get('cleanup_reasoning_content_present'))}\n")
     f.write(f"cleanup_structured_validated: {bool(analysis_meta.get('cleanup_structured_validated'))}\n")
+    if analysis_meta.get("cleanup_validation_error"):
+        f.write(f"cleanup_validation_error: |\n")
+        for line in str(analysis_meta.get("cleanup_validation_error")).splitlines():
+            f.write(f"  {line}\n")
     f.write(f"from_cache: {bool(analysis_meta.get('from_cache'))}\n")
 
 
@@ -97,7 +103,7 @@ def write_single_analysis(
     filename: str = None,
     usage: dict = None,
     analysis_meta: dict = None,
-    thinking_mode: bool = False,
+    thinking_mode: bool = None,
 ):
     import re
 
@@ -119,6 +125,7 @@ def write_single_analysis(
     paper_comment = _get_paper_comment(paper)
     datetime_str = today.strftime("%Y-%m-%d %H:%M:%S")
     from config import AI_MODEL
+    resolved_thinking_mode = bool((analysis_meta or {}).get("thinking_requested", thinking_mode))
 
     with open(md_file, "w", encoding="utf-8") as f:
         f.write("---\n")
@@ -127,7 +134,7 @@ def write_single_analysis(
         f.write(f"description: {', '.join(author_names)}\n")
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"arxiv_id: {paper.get_short_id()}\n")
-        f.write(f"thinking_mode: {thinking_mode}\n")
+        f.write(f"thinking_mode: {resolved_thinking_mode}\n")
         _write_analysis_metadata_block(f, analysis_meta or {}, AI_MODEL)
         _write_usage_block(f, usage or {})
         f.write("---\n")
@@ -146,6 +153,47 @@ def write_single_analysis(
         f.write(f"**链接**: {paper.entry_id}\n\n")
         f.write(f"{analysis_body}\n\n")
     logger.info("单论文分析结果已写入 %s", md_file.absolute())
+    return md_file
+
+
+def write_pdf_analysis(
+    pdf_path,
+    analysis,
+    filename: str = None,
+    usage: dict = None,
+    analysis_meta: dict = None,
+    thinking_mode: bool = None,
+):
+    pdf_path = Path(pdf_path)
+    today = datetime.datetime.now()
+    time_str = today.strftime("%H-%M-%S")
+    if filename:
+        md_file = RESULTS_DIR / filename
+    else:
+        md_file = RESULTS_DIR / f"pdf_{pdf_path.stem}_{today.strftime('%Y-%m-%d')}_{time_str}.md"
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    chinese_title = _extract_chinese_title(analysis) or pdf_path.stem
+    analysis_body = _strip_analysis_heading(analysis)
+    datetime_str = today.strftime("%Y-%m-%d %H:%M:%S")
+    from config import AI_MODEL
+    resolved_thinking_mode = bool((analysis_meta or {}).get("thinking_requested", thinking_mode))
+
+    with open(md_file, "w", encoding="utf-8") as f:
+        f.write("---\n")
+        f.write(f"title: \"{chinese_title}\"\n")
+        f.write(f"date: {datetime_str}\n")
+        f.write("source: local_pdf\n")
+        f.write(f"pdf_file: {pdf_path.name}\n")
+        f.write(f"ai_model: {AI_MODEL}\n")
+        f.write(f"thinking_mode: {resolved_thinking_mode}\n")
+        _write_analysis_metadata_block(f, analysis_meta or {}, AI_MODEL)
+        _write_usage_block(f, usage or {})
+        f.write("---\n\n")
+        f.write(f"# {chinese_title}\n\n")
+        f.write(f"{analysis_body}\n")
+
+    logger.info("PDF 分析结果已写入 %s", md_file.absolute())
     return md_file
 
 

@@ -730,7 +730,7 @@ def check_topic_relevance(paper):
         return 2, f"检查出错, 默认处理: {str(e)}"
 
 
-def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=False):
+def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=None):
     arxiv_id = paper.get_short_id()
 
     request_state = {
@@ -831,7 +831,7 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=F
         return f"**论文分析出错**: {str(e)}", {}, {}
 
 
-def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, thinking_mode=False):
+def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, thinking_mode=None):
     from pathlib import Path
 
     pdf_path = Path(pdf_path)

@@ -1,408 +1,286 @@
-# ArXiv论文追踪与分析器
+# ArXiv 论文追踪与分析器
 
-一个基于 GitHub Actions 的自动化工具，每天早上自动追踪和分析 arXiv 最新论文，并通过邮件发送分析报告。该工具支持多种 AI 模型进行论文分析和总结。
+一个用于追踪、筛选、翻译和分析 arXiv 论文的自动化工具。项目支持多家兼容 OpenAI 风格接口的模型服务商，能够区分重点论文与次重点论文，并把结果写入 Markdown、发送邮件、上传到 GitHub Actions Artifacts。
 
-## 功能特点
+## 核心能力
 
-- 每天北京时间早上 10:40 自动运行（UTC 02:40）
-- 自动追踪最近发布的 arXiv 论文（默认类别：数学偏微分方程 math.AP）
-- 支持多种 AI 模型提供商（DeepSeek、OpenAI、智谱AI、通义千问、豆包、Kimi、OpenRouter、SiliconFlow 等）
-- 底层统一通过 LiteLLM 调用多家 OpenAI-compatible / 多提供商接口
-- 完整论文分析使用 Instructor + Pydantic 做结构化输出校验，再由本地代码渲染固定 Markdown
-- 可选启用第二个 cleanup 模型，对完整分析的各个 block 做严格文本清洗，再由本地代码拼合 Markdown
-- 主题分类和摘要翻译同样优先走结构化输出，失败时自动回退到兼容的文本模式
-- 智能主题分类：重点关注论文进行完整分析，了解领域论文翻译摘要
-- 多线程并行处理，提高分析效率
-- 内置缓存机制，避免重复分析
-- 支持单论文分析和本地 PDF 分析
-- 通过邮件发送分析报告
-- 自动保存分析结果到 `results/` 目录下的时间戳 Markdown 文件
-- 自动清理下载的 PDF 文件以节省空间
+- 按类别和日期范围抓取 arXiv 论文
+- 用 AI 做主题分类：重点关注、了解领域、不相关
+- 对重点论文提取 PDF 并生成完整中文分析
+- 对次重点论文生成标题和摘要翻译
+- 完整分析优先走 `LiteLLM + Instructor + Pydantic` 的结构化输出
+- 可选启用 reasoning/thinking 模式，并在不支持时自动回退
+- 可选启用第二个 cleanup 模型，对分析 blocks 做文本清洗
+- 结果自动写入 `results/`，并支持邮件发送
+- 内置缓存，避免重复请求
 
-## 安装与配置
+## 运行环境
 
-1. Fork 或克隆仓库：
-cd arxiv_paper_tracker
-```
+- Python `3.10+`
+- GitHub Actions 工作流当前使用 Python `3.13`
 
-2. 配置环境变量：
-```bash
-cp .env.example .env
-# 编辑 .env 文件，填入您的API密钥和其他配置
-```
+安装依赖：
 
-3. 在 GitHub 仓库中，进入 **Settings → Secrets and variables → Actions**，点击 **Secrets** 标签页，添加以下敏感信息：
-
-```
-QWEN_API_KEY=sk-your-qwen-api-key
-DEEPSEEK_API_KEY=sk-your-deepseek-api-key
-OPENAI_API_KEY=sk-your-openai-api-key
-GLM_API_KEY=your-glm-api-key
-DOUBAO_API_KEY=your-doubao-api-key
-KIMI_API_KEY=your-kimi-api-key
-OPENROUTER_API_KEY=your-openrouter-api-key
-SILICONFLOW_API_KEY=your-siliconflow-api-key
-CUSTOM_API_KEY=your-custom-api-key
-SMTP_USERNAME=your_qq@qq.com
-SMTP_PASSWORD=your_qq_authorization_code
-EMAIL_FROM=your_qq@qq.com
-EMAIL_TO=recipient@email.com
-```
-
-**Secrets 配置说明：**
-- 各个 AI 提供商的 API 密钥（只需配置您使用的提供商）
-- `SMTP_USERNAME`: 发送邮件的邮箱账号
-- `SMTP_PASSWORD`: 邮箱授权码（不是登录密码）
-- `EMAIL_FROM`: 发件人邮箱（通常与SMTP_USERNAME相同）
-- `EMAIL_TO`: 收件人邮箱（支持多个，用逗号分隔）
-
-#### GitHub Variables 配置（非敏感配置）
-
-在同一页面点击 **Variables** 标签页，添加以下可公开的配置：
-
-```
-ARXIV_CATEGORIES=math.AP
-MAX_PAPERS=50
-SEARCH_DAYS=5
-AI_PROVIDER=qwen
-AI_MODEL=qwen-turbo
-MAX_THREADS=5
-PRIORITY_TOPICS=Navier-Stokes方程|Euler方程|湍流|涡度
-SECONDARY_TOPICS=色散偏微分方程|调和分析|极大算子
-PRIORITY_ANALYSIS_DELAY=3
-SECONDARY_ANALYSIS_DELAY=2
-EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
-```
-
-**Variables 配置说明：**
-- `ARXIV_CATEGORIES`: ArXiv 论文类别，用逗号分隔（如：`math.AP,math.NA`）
-- `MAX_PAPERS`: 每次获取的最大论文数量
-- `SEARCH_DAYS`: 搜索最近几天的论文
-- `AI_PROVIDER`: AI提供商选择，支持 `deepseek`, `openai`, `glm`, `qwen`, `doubao`, `kimi`, `openrouter`, `siliconflow`, `custom`
-- `AI_MODEL`: AI模型名称（默认 `qwen-turbo`）
-- `MAX_THREADS`: 并行处理的最大线程数（默认5）
-- `PRIORITY_TOPICS`: 重点关注主题，用 `|` 分隔，与之相关的论文会进行完整分析
-- `SECONDARY_TOPICS`: 了解领域主题，用 `|` 分隔，与之相关的论文只翻译摘要
-- `PRIORITY_ANALYSIS_DELAY`: 重点论文分析间隔时间（秒）
-- `SECONDARY_ANALYSIS_DELAY`: 摘要翻译间隔时间（秒）
-- `EMAIL_SUBJECT_PREFIX`: 邮件主题前缀
-
-#### 可选：完整分析 cleanup 配置
-
-如果你希望“论文内容分析”和“Markdown 文本清洗”由两个不同模型完成，可以增加以下变量：
-
-```bash
-ANALYSIS_CLEANUP_ENABLED=on
-ANALYSIS_CLEANUP_PROVIDER=openrouter
-ANALYSIS_CLEANUP_MODEL=openrouter/your-editor-model
-ANALYSIS_CLEANUP_THINKING_MODE=off
-```
-
-cleanup 只会拿到两类输入：论文元数据，以及结构化分析的各个 block。它会 block in, block out 地返回清洗后的标题和四个 section，然后再由本地代码拼回固定 Markdown 结构。cleanup 的职责仅限于修复乱码、转义、分段与表达清晰度，不应该重新发明数学内容。
-
-4. 安装依赖（本地测试时需要）：
 ```bash
 pip install -r requirements.txt
 ```
 
-## AI模型配置
+## 快速开始
 
-系统支持多种AI模型提供商，您可以通过环境变量选择：
-
-### 支持的AI提供商
-
-| 提供商 | 环境变量 | 默认模型 | 获取API密钥 |
-|--------|----------|----------|-------------|
-| DeepSeek | `AI_PROVIDER=deepseek` | `deepseek-chat` | [DeepSeek官网](https://platform.deepseek.com/) |
-| OpenAI | `AI_PROVIDER=openai` | `gpt-4` | [OpenAI官网](https://platform.openai.com/) |
-| 智谱AI | `AI_PROVIDER=glm` | `glm-4` | [智谱AI](https://open.bigmodel.cn/) |
-| 通义千问 | `AI_PROVIDER=qwen` | `qwen-turbo` | [通义千问](https://dashscope.aliyun.com/) |
-| 豆包 | `AI_PROVIDER=doubao` | `doubao-pro` | [豆包官网](https://www.doubao.com/) |
-| Kimi | `AI_PROVIDER=kimi` | `moonshot-v1-8k` | [Kimi官网](https://kimi.moonshot.cn/) |
-| OpenRouter | `AI_PROVIDER=openrouter` | 根据模型 | [OpenRouter官网](https://openrouter.ai/) |
-| SiliconFlow | `AI_PROVIDER=siliconflow` | 根据模型 | [SiliconFlow官网](https://siliconflow.cn/) |
-| 自定义 | `AI_PROVIDER=custom` | 自定义 | 需配置 CUSTOM_API_BASE/CUSTOM_API_KEY |
-
-### 配置示例
+1. 克隆仓库并进入目录
 
 ```bash
-# 使用DeepSeek（默认）
-AI_PROVIDER=deepseek
-AI_MODEL=deepseek-chat
-
-# 使用OpenAI GPT-4
-AI_PROVIDER=openai
-AI_MODEL=gpt-4
-
-# 使用智谱AI
-AI_PROVIDER=glm
-AI_MODEL=glm-4
-
-# 使用通义千问
-AI_PROVIDER=qwen
-AI_MODEL=qwen-turbo
-
-# 使用豆包
-AI_PROVIDER=doubao
-DOUBAO_API_KEY=your-doubao-api-key
-
-# 使用Kimi
-AI_PROVIDER=kimi
-KIMI_API_KEY=your-kimi-api-key
-
-# 使用智谱AI
-AI_PROVIDER=glm
-AI_MODEL=glm-4
-
-# 使用自定义大模型API
-AI_PROVIDER=custom
-CUSTOM_API_KEY=your-custom-api-key
-CUSTOM_API_BASE=https://your-custom-api.com/v1
+git clone <your-repo-url>
+cd arxiv_paper_tracker
 ```
 
-## 使用方法
-
-### 自动运行
-- 工作流会在每天早上 10:40（北京时间）自动运行
-- 运行结果会：
-  1. 发送到配置的邮箱
-  2. 保存在 `results/` 目录的 Markdown 文件中
-  3. 上传为 GitHub Actions Artifact
-
-### 手动触发
-1. 在仓库的 Actions 页面
-2. 选择 "Daily Paper Analysis" 工作流
-3. 点击 "Run workflow"
-4. 选择 "Run workflow" 确认运行
-
-### Windows 便捷脚本
-
-双击运行项目根目录下的 `run_tracker.bat` 脚本，进入交互式菜单：
-
-- 选择 1：运行全流程分析（抓取并分析最近论文）
-- 选择 2：按指定日期或日期范围运行分析
-- 选择 3：单论文分析（输入 arXiv ID 和可选页数）
-- 选择 4：本地 PDF 分析（自动列出 `papers` 文件夹下的 PDF，选择后分析）
-- 选择 5：缓存管理
-- 选择 6：切换 thinking 模式
-- 选择 7：退出
-
-脚本假设您已提前配置好虚拟环境和 `.env` 文件。本地 PDF 分析功能要求将 PDF 文件放在项目根目录的 `papers` 文件夹中。
-
-### macOS/Linux 便捷脚本
-
-在项目根目录运行 `run_tracker.sh` 脚本，进入交互式菜单：
+2. 复制环境变量模板
 
 ```bash
-chmod +x run_tracker.sh
-./run_tracker.sh
+cp .env.example .env
 ```
 
-菜单选项与 Windows 脚本一致：
+3. 编辑 `.env`，至少填写你要使用的 AI 提供商密钥和邮件配置
 
-- 选择 1：运行全流程分析（抓取并分析最近论文）
-- 选择 2：单论文分析（输入 arXiv ID 和可选页数）
-- 选择 3：本地 PDF 分析（自动列出 papers 文件夹下的 PDF，选择后分析）
-- 选择 4：切换 thinking 模式
-- 选择 5：退出
-
-同样要求提前配置好虚拟环境和 `.env` 文件。本地 PDF 分析需要将 PDF 放在项目根目录的 `papers` 文件夹中。
-
-## 配置说明
-
-
-### 命令行参数（本地运行）
-
-除了 GitHub Actions 自动运行，您也可以在本地通过命令行运行，支持多种模式。
-
-#### 批量模式
-
-自动获取和分析最近论文（使用配置中的类别和时间范围）：
+4. 本地运行
 
 ```bash
 python src/main.py
 ```
 
-指定日期分析：
+## 主要环境变量
+
+### AI 基础配置
 
 ```bash
-# 分析指定日期
-python src/main.py --date 2025-12-25
-
-# 分析日期范围
-python src/main.py --date 2025-12-20:2025-12-25
+AI_PROVIDER=qwen
+AI_MODEL=qwen-turbo
 ```
 
-#### 单论文分析
+支持的 provider：
 
-通过 arXiv ID 分析指定论文：
+- `deepseek`
+- `openai`
+- `glm`
+- `qwen`
+- `doubao`
+- `kimi`
+- `openrouter`
+- `siliconflow`
+- `custom`
+
+### 完整分析的 thinking 配置
 
 ```bash
-# 分析前 10 页（默认）
+ANALYSIS_THINKING_MODE=off
+ANALYSIS_THINKING_MODEL=
+ANALYSIS_THINKING_BUDGET=
+ANALYSIS_THINKING_EFFORT=
+```
+
+说明：
+
+- `ANALYSIS_THINKING_MODE=on|off` 用于设置完整分析的默认 thinking 开关
+- 命令行 `--thinking` 会显式开启
+- 命令行 `--no-thinking` 会显式关闭
+- 若 provider/model 不支持 thinking，请求会自动回退到普通模式
+
+### 完整分析的 cleanup 配置
+
+```bash
+ANALYSIS_CLEANUP_ENABLED=off
+ANALYSIS_CLEANUP_PROVIDER=
+ANALYSIS_CLEANUP_MODEL=
+ANALYSIS_CLEANUP_THINKING_MODE=off
+```
+
+cleanup 只接收两类输入：
+
+- 论文元数据
+- 结构化分析的各个 block
+
+它会以 block in, block out 的方式返回清洗后的标题与四个 section，然后再由本地代码拼回固定 Markdown。
+
+### ArXiv 与性能配置
+
+```bash
+ARXIV_CATEGORIES=math.AP
+MAX_PAPERS=50
+SEARCH_DAYS=5
+MAX_THREADS=5
+PRIORITY_ANALYSIS_DELAY=3
+SECONDARY_ANALYSIS_DELAY=2
+```
+
+### 邮件配置
+
+```bash
+SMTP_SERVER=smtp.qq.com
+SMTP_PORT=587
+SMTP_USERNAME=your_mail@qq.com
+SMTP_PASSWORD=your_authorization_code
+EMAIL_FROM=your_mail@qq.com
+EMAIL_TO=recipient@example.com
+EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
+```
+
+## GitHub Actions 配置
+
+在仓库 `Settings -> Secrets and variables -> Actions` 中配置：
+
+### Secrets
+
+- 各 provider 的 API Key
+- `SMTP_SERVER`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `EMAIL_FROM`
+- `EMAIL_TO`
+- 可选：`GH_PAGES_TOKEN`
+
+### Variables
+
+- `AI_PROVIDER`
+- `AI_MODEL`
+- `ANALYSIS_THINKING_MODE`
+- `ANALYSIS_THINKING_MODEL`
+- `ANALYSIS_THINKING_BUDGET`
+- `ANALYSIS_THINKING_EFFORT`
+- `ANALYSIS_CLEANUP_ENABLED`
+- `ANALYSIS_CLEANUP_PROVIDER`
+- `ANALYSIS_CLEANUP_MODEL`
+- `ANALYSIS_CLEANUP_THINKING_MODE`
+- `ARXIV_CATEGORIES`
+- `MAX_PAPERS`
+- `SEARCH_DAYS`
+- `MAX_THREADS`
+- `PRIORITY_TOPICS`
+- `SECONDARY_TOPICS`
+- `PRIORITY_ANALYSIS_DELAY`
+- `SECONDARY_ANALYSIS_DELAY`
+- `EMAIL_SUBJECT_PREFIX`
+
+工作流文件位于 `.github/workflows/daily_paper_analysis.yml`。
+
+## 本地使用方式
+
+### 批量分析
+
+```bash
+python src/main.py
+python src/main.py --date 2026-04-01
+python src/main.py --date 2026-04-01:2026-04-03
+python src/main.py --thinking
+python src/main.py --no-thinking
+```
+
+### 单论文分析
+
+```bash
 python src/main.py --arxiv 2401.12345
-
-# 分析前 20 页
 python src/main.py --arxiv 2401.12345 -p 20
-
-# 分析全部页
-python src/main.py --arxiv 2401.12345 -p all
+python src/main.py --arxiv 2401.12345 -p all --thinking
 ```
 
-#### 本地 PDF 分析
-
-直接分析本地 PDF 文件：
+### 本地 PDF 分析
 
 ```bash
-python src/main.py --pdf ./papers/some_paper.pdf -p 20
+python src/main.py --pdf ./papers/some_paper.pdf
+python src/main.py --pdf ./papers/some_paper.pdf -p all --thinking
 ```
 
-#### 缓存管理
-
-查看和清理缓存：
+### 缓存管理
 
 ```bash
-# 显示缓存统计
 python src/main.py --cache-stats
-
-# 清除所有缓存
 python src/main.py --clear-cache
-
-# 清除特定类型缓存
-python src/main.py --clear-cache classification
 python src/main.py --clear-cache analysis
 python src/main.py --clear-cache translation
 ```
 
-**输出说明：**
-- 批量模式结果保存在 `results/` 目录，文件名如 `arxiv_analysis_2025-02-07.md`
-- 单论文分析结果文件名如 `arxiv_2401.12345_2025-02-07_22-56-45.md`
-- 本地 PDF 分析结果文件名如 `pdf_some_paper_2025-02-07_22-56-45.md`
-- 单论文和本地 PDF 的结果 frontmatter 会记录 `effective_model`、`thinking_applied`、`fallback_used`、`reasoning_content_present`、`structured_output_validated`
-- 如果 `thinking_applied: true` 且 `reasoning_content_present: true`，说明本次分析确实进入了 reasoning 路径，而不是仅仅改了 prompt
+### 交互脚本
 
-### 结构化输出与思考模式
+- Windows: `run_tracker.bat`
+- macOS / Linux: `run_tracker.sh`
 
-- priority 1 的完整论文分析与本地 PDF 分析不再依赖 prompt 直接输出最终 Markdown，而是先生成 Pydantic 结构化对象，再由本地代码渲染固定的四段分析结构
-- 主题分类会先返回结构化的 `priority/reason`，摘要翻译会先返回结构化的 `chinese_title/abstract_translation`
-- 如果 provider / model 的 thinking 配置不被接受，请求会自动回退到普通模式，并在结果元数据里写入 `fallback_used`
-- 目前项目用 `LiteLLM` 统一多 provider transport，用 `Instructor` 约束结构化输出；这样即使不同服务商的 thinking 开启方式不同，也能在仓库内部用统一接口处理
+## 输出文件
 
-### 邮件配置
-支持主流邮箱服务：
-- QQ 邮箱：需要在邮箱设置中开启 SMTP 服务并获取授权码
-- Gmail：需要开启两步验证并生成应用专用密码
-- 其他邮箱：需要确保支持 SMTP 服务
+### 批量模式
 
-### GitHub Actions 高级配置
+- `results/arxiv_analysis_YYYY-MM-DD_HH-MM-SS.md`
 
-**修改运行时间：**
+### 单论文模式
 
-在 `.github/workflows/daily_paper_analysis.yml` 中调整 cron 表达式：
+- `results/arxiv_<id>_YYYY-MM-DD_HH-MM-SS.md`
 
-```yaml
-on:
-  schedule:
-    - cron: '40 2 * * *'  # UTC 时间，北京时间早上 10:40
-```
+### 本地 PDF 模式
 
-**配置页面推送（可选）：**
+- `results/pdf_<pdf_stem>_YYYY-MM-DD_HH-MM-SS.md`
 
-如需自动推送分析结果到 Pages 仓库，需要添加：
-- Secret: `GH_PAGES_TOKEN` - GitHub Personal Access Token（需要 repo 权限）
-- 在 workflow 中修改 `if: github.repository == 'your-username/arxiv_paper_tracker'`
+单论文和本地 PDF 结果的 frontmatter 会记录这些关键信息：
 
-**工作流超时：**
+- `ai_provider`
+- `effective_model`
+- `thinking_mode`
+- `thinking_applied`
+- `fallback_used`
+- `reasoning_content_present`
+- `structured_output_validated`
+- `structured_output_fallback`
+- `cleanup_requested`
+- `cleanup_attempted`
+- `cleanup_applied`
+- `cleanup_provider`
+- `cleanup_effective_model`
+- `cleanup_structured_validated`
+- `from_cache`
+- `token_usage`
 
-默认超时时间为 40 分钟，可在 workflow 中调整：
+## 结构化输出与回退策略
 
-```yaml
-jobs:
-  analyze-papers:
-    timeout-minutes: 40
+- 重点论文分析和本地 PDF 分析优先请求 `StructuredPaperAnalysis`
+- 主题分类优先请求 `StructuredTopicClassification`
+- 标题/摘要翻译优先请求结构化翻译 schema
+- 若结构化路径失败，会回退到兼容的文本模式
+- 若 thinking 配置不被接受，会回退到普通模式
+- 若 cleanup 开启，则会在结构化 blocks 上做独立清洗
 
+## 测试
 
-
-
-
-
-
-### 邮件配置
-支持主流邮箱服务：
-- QQ 邮箱：需要在邮箱设置中开启 SMTP 服务并获取授权码
-- Gmail：需要开启两步验证并生成应用专用密码
-- 其他邮箱：需要确保支持 SMTP 服务
-
-## 故障排查
-
-### 常见问题
-
-**1. API 调用失败**
-
-- 检查 API 密钥是否正确配置
-- 确认 API 密钥是否有足够的配额
-- 检查网络连接是否正常
-- 如果遇到频率限制，可以增加 `PRIORITY_ANALYSIS_DELAY` 和 `SECONDARY_ANALYSIS_DELAY` 的值
-
-**2. 邮件发送失败**
-
-- 确认邮箱配置正确，特别是授权码/应用专用密码
-- 检查 SMTP 服务器地址和端口是否正确
-- QQ 邮箱必须使用授权码，不是登录密码
-- Gmail 需要开启两步验证并生成应用专用密码
-
-**3. 工作流超时**
-
-- 默认超时时间为 40 分钟
-- 如果论文数量较多或 PDF 较大，可能需要增加超时时间
-- 可以减少 `MAX_PAPERS` 的值来减少处理时间
-- 减少 `MAX_THREADS` 可能有助于降低并发压力
-
-**4. PDF 下载失败**
-
-- 某些 arXiv 论文可能没有 PDF 版本
-- 检查网络连接是否正常
-- 查看 GitHub Actions 日志获取详细错误信息
-
-**5. 本地运行问题**
-
-- 确保已安装所有依赖：`pip install -r requirements.txt`
-- 检查 `.env` 文件是否正确配置
-- Python 版本建议 3.8 或更高
-
-### 调试技巧
-
-**查看详细日志：**
+运行全量测试：
 
 ```bash
-# 本地运行时会显示详细日志
-python src/main.py
+python -m pytest tests -q
 ```
 
-**查看缓存状态：**
+## 常见问题
 
-```bash
-python src/main.py --cache-stats
-```
+### 1. GitHub Actions 安装依赖失败
 
-**清除缓存重新分析：**
+优先检查：
 
-```bash
-python src/main.py --clear-cache all
-```
+- `requirements.txt` 是否有新的版本冲突
+- workflow 是否使用了项目当前支持的 Python 版本
 
-**分析单篇论文进行测试：**
+### 2. 分析结果格式异常
 
-```bash
-python src/main.py --arxiv 2401.12345 -p 5
-```
+优先检查：
 
-## 注意事项
+- `structured_output_validated`
+- `structured_output_fallback`
+- `cleanup_applied`
+- `cleanup_validation_error`
 
-- 确保配置的 AI API 密钥有效且有足够配额
-- 邮箱配置正确（特别是授权码/应用专用密码）
-- GitHub Actions 每月有 2000 分钟的免费额度，足够日常使用
-- 如需修改运行时间，可以在 `.github/workflows/daily_paper_analysis.yml` 中调整 cron 表达式
+### 3. thinking 看起来没有生效
+
+优先检查结果 frontmatter 中的：
+
+- `thinking_mode`
+- `thinking_applied`
+- `reasoning_content_present`
+- `fallback_used`
 
 ## 许可证
 
-MIT License 
+MIT

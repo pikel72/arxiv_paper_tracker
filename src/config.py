@@ -31,6 +31,19 @@ def _get_bool_env(name, default="off"):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_optional_bool_env(name):
+    value = os.getenv(name)
+    if value in (None, ""):
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    logger.warning("环境变量 %s 不是有效布尔值，将忽略: %s", name, value)
+    return None
+
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GLM_API_KEY = os.getenv("GLM_API_KEY")
@@ -45,6 +58,7 @@ CUSTOM_API_BASE = os.getenv("CUSTOM_API_BASE")
 CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")
 AI_MODEL = os.getenv("AI_MODEL", "qwen-turbo")
+ANALYSIS_THINKING_MODE = _get_optional_bool_env("ANALYSIS_THINKING_MODE")
 ANALYSIS_THINKING_MODEL = os.getenv("ANALYSIS_THINKING_MODEL")
 ANALYSIS_THINKING_BUDGET = _get_optional_int("ANALYSIS_THINKING_BUDGET")
 ANALYSIS_THINKING_EFFORT = os.getenv("ANALYSIS_THINKING_EFFORT")
@@ -253,6 +267,9 @@ class AIClient:
         return any(marker in normalized for marker in markers)
 
     def get_analysis_request_config(self, thinking_mode=False):
+        if thinking_mode is None:
+            thinking_mode = ANALYSIS_THINKING_MODE
+
         config = {
             "provider": self.provider,
             "effective_model": self.model,

@@ -8,6 +8,8 @@ import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
@@ -15,6 +17,9 @@ def test_email():
     """测试邮件发送功能，使用环境变量中的配置"""
     from dotenv import load_dotenv
     load_dotenv()
+
+    if os.getenv("RUN_EMAIL_TEST", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        pytest.skip("默认跳过真实 SMTP 集成测试；如需执行，请显式设置 RUN_EMAIL_TEST=1")
     
     smtp_server = os.getenv("SMTP_SERVER", "smtp.qq.com")
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
@@ -23,8 +28,7 @@ def test_email():
     email_to = os.getenv("EMAIL_TO")
     
     if not all([username, password, email_to]):
-        print("❌ 请在 .env 文件中配置 SMTP_USERNAME, SMTP_PASSWORD, EMAIL_TO")
-        return False
+        pytest.skip("未配置 SMTP_USERNAME、SMTP_PASSWORD 或 EMAIL_TO")
     
     print(f"SMTP服务器: {smtp_server}:{smtp_port}")
     print(f"发件人: {username}")
@@ -60,13 +64,13 @@ def test_email():
         server.quit()
         
         print("✅ 邮件发送成功!")
-        return True
+        assert True
         
     except Exception as e:
         print(f"❌ 邮件发送失败: {e}")
         import traceback
         print(f"详细错误: {traceback.format_exc()}")
-        return False
+        pytest.fail(f"邮件发送失败: {e}")
 
 
 if __name__ == "__main__":

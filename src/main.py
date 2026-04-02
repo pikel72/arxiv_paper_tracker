@@ -10,19 +10,18 @@ from concurrent.futures import ThreadPoolExecutor
 from logging.handlers import RotatingFileHandler
 
 from config import (
-    CATEGORIES, MAX_PAPERS, PAPERS_DIR, RESULTS_DIR,
+    CATEGORIES, MAX_PAPERS, PAPERS_DIR,
     PRIORITY_ANALYSIS_DELAY, SECONDARY_ANALYSIS_DELAY,
     PRIORITY_TOPICS, SECONDARY_TOPICS, MAX_THREADS,
     LOG_LEVEL, LOG_DIR, LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT
 )
 from crawler import get_recent_papers
 from analyzer import (
-    check_topic_relevance, analyze_paper, extract_pdf_text,
-    extract_analysis_title, render_analysis_body
+    check_topic_relevance, analyze_paper
 )
 from translator import translate_abstract_with_deepseek
 from emailer import send_email, format_email_content
-from utils import write_to_conclusion, delete_pdf, download_paper
+from utils import write_to_conclusion, delete_pdf, download_paper, write_pdf_analysis
 
 import requests
 from models import SimplePaper
@@ -48,7 +47,7 @@ def configure_logging():
         handlers=handlers
     )
 
-def process_single_paper_task(paper, index, total, thinking_mode=False):
+def process_single_paper_task(paper, index, total, thinking_mode=None):
     """处理单篇论文的任务函数，用于多线程"""
     try:
         import random
@@ -106,6 +105,8 @@ def main():
   单论文分析（arXiv ID）:
     python src/main.py --arxiv 2401.12345
     python src/main.py --arxiv 2401.12345 -p all
+    python src/main.py --arxiv 2401.12345 --thinking
+    python src/main.py --arxiv 2401.12345 --no-thinking
   
   单PDF分析（本地文件）:
     python src/main.py --pdf ./papers/some_paper.pdf
@@ -141,8 +142,20 @@ def main():
                        help='清除缓存，可选类型: classification, analysis, translation, papers, all')
     
     # 高级选项
-    parser.add_argument('--thinking', action='store_true',
-                       help='启用AI深度思考模式以提升分析质量')
+    thinking_group = parser.add_mutually_exclusive_group()
+    thinking_group.add_argument(
+        '--thinking',
+        dest='thinking',
+        action='store_true',
+        help='显式启用完整分析的深度思考模式',
+    )
+    thinking_group.add_argument(
+        '--no-thinking',
+        dest='thinking',
+        action='store_false',
+        help='显式关闭完整分析的深度思考模式',
+    )
+    parser.set_defaults(thinking=None)
     
     args = parser.parse_args()
 
@@ -198,8 +211,10 @@ def main():
     logger.info(f"- 了解主题数量: {len(SECONDARY_TOPICS)}")
     if args.date:
         logger.info(f"- 指定日期: {args.date}")
-    if args.thinking:
-        logger.info("- 完整分析启用深度思考模式")
+    if args.thinking is True:
+        logger.info("- 完整分析显式启用深度思考模式")
+    elif args.thinking is False:
+        logger.info("- 完整分析显式关闭深度思考模式")
     
     # 获取论文（支持指定日期）
     papers = get_recent_papers(CATEGORIES, MAX_PAPERS, target_date=args.date)
@@ -301,10 +316,10 @@ def fetch_paper_by_id(arxiv_id):
     return None
 
 
-def analyze_single_paper(arxiv_id, max_pages=10, thinking_mode=False):
+def analyze_single_paper(arxiv_id, max_pages=10, thinking_mode=None):
     """通过 arXiv ID 分析论文：获取元数据、下载PDF、调用AI分析并写入结果。"""
     start_time = time.time()
-    mode_str = " (深度思考模式)" if thinking_mode else ""
+    mode_str = " (深度思考模式)" if thinking_mode is True else ""
     logger.info(f"开始单论文分析{mode_str}: {arxiv_id}")
 
     paper = fetch_paper_by_id(arxiv_id)
@@ -339,7 +354,7 @@ def analyze_single_paper(arxiv_id, max_pages=10, thinking_mode=False):
     delete_pdf(pdf_path)
 
 
-def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=False):
+def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=None):
     """直接分析本地 PDF 文件，不依赖 arXiv 元数据"""
     from pathlib import Path
     from analyzer import analyze_pdf_only
@@ -351,7 +366,7 @@ def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=False):
         logger.error(f"PDF 文件不存在: {pdf_path}")
         return
     
-    mode_str = " (深度思考模式)" if thinking_mode else ""
+    mode_str = " (深度思考模式)" if thinking_mode is True else ""
     logger.info(f"开始分析本地 PDF{mode_str}: {pdf_path}")
     
     analysis, usage, analysis_meta = analyze_pdf_only(
@@ -361,54 +376,16 @@ def analyze_local_pdf(pdf_path, max_pages=10, thinking_mode=False):
         thinking_mode=thinking_mode,
     )
     
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     output_filename = f"pdf_{pdf_path.stem}_{now}.md"
-    output_path = RESULTS_DIR / output_filename
-    chinese_title = extract_analysis_title(analysis, pdf_path.stem)
-    analysis_body = render_analysis_body(analysis)
-    
-    datetime_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    from config import AI_MODEL
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(f"---\n")
-        f.write(f"title: \"{chinese_title}\"\n")
-        f.write(f"date: {datetime_str}\n")
-        f.write(f"source: local_pdf\n")
-        f.write(f"pdf_file: {pdf_path.name}\n")
-        f.write(f"ai_model: {AI_MODEL}\n")
-        f.write(f"thinking_mode: {thinking_mode}\n")
-        if analysis_meta:
-            if analysis_meta.get("provider"):
-                f.write(f"ai_provider: {analysis_meta.get('provider')}\n")
-            if analysis_meta.get("effective_model"):
-                f.write(f"effective_model: {analysis_meta.get('effective_model')}\n")
-            f.write(f"thinking_applied: {bool(analysis_meta.get('thinking_applied'))}\n")
-            f.write(f"fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
-            f.write(f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
-            f.write(f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
-            f.write(f"cleanup_requested: {bool(analysis_meta.get('cleanup_requested'))}\n")
-            f.write(f"cleanup_attempted: {bool(analysis_meta.get('cleanup_attempted'))}\n")
-            f.write(f"cleanup_applied: {bool(analysis_meta.get('cleanup_applied'))}\n")
-            if analysis_meta.get("cleanup_provider"):
-                f.write(f"cleanup_provider: {analysis_meta.get('cleanup_provider')}\n")
-            if analysis_meta.get("cleanup_effective_model"):
-                f.write(f"cleanup_effective_model: {analysis_meta.get('cleanup_effective_model')}\n")
-            f.write(f"cleanup_thinking_applied: {bool(analysis_meta.get('cleanup_thinking_applied'))}\n")
-            f.write(f"cleanup_reasoning_content_present: {bool(analysis_meta.get('cleanup_reasoning_content_present'))}\n")
-            f.write(f"cleanup_structured_validated: {bool(analysis_meta.get('cleanup_structured_validated'))}\n")
-            f.write(f"from_cache: {bool(analysis_meta.get('from_cache'))}\n")
-        if usage:
-            f.write(f"token_usage:\n")
-            f.write(f"  prompt_tokens: {usage.get('prompt_tokens', 0)}\n")
-            f.write(f"  completion_tokens: {usage.get('completion_tokens', 0)}\n")
-            f.write(f"  total_tokens: {usage.get('total_tokens', 0)}\n")
-            if "reasoning_tokens" in usage:
-                f.write(f"  reasoning_tokens: {usage.get('reasoning_tokens', 0)}\n")
-        f.write(f"---\n\n")
-        f.write(f"# {chinese_title}\n\n")
-        f.write(f"{analysis_body}\n")
+    output_path = write_pdf_analysis(
+        pdf_path,
+        analysis,
+        filename=output_filename,
+        usage=usage,
+        analysis_meta=analysis_meta,
+        thinking_mode=thinking_mode,
+    )
     
     end_time = time.time()
     duration = end_time - start_time

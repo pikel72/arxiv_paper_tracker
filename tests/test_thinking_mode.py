@@ -133,6 +133,20 @@ def test_batch_mode_threads_thinking_flag():
     assert submitted_args[-1] is True
 
 
+def test_batch_mode_without_cli_override_passes_none():
+    paper = DummyPaper()
+    argv = ["main.py"]
+
+    with patch.object(sys, "argv", argv), patch.object(main, "configure_logging"), patch.object(
+        main, "get_recent_papers", return_value=[paper]
+    ), patch.object(main, "ThreadPoolExecutor", CapturingExecutor):
+        main.main()
+
+    assert CapturingExecutor.submissions
+    submitted_args = CapturingExecutor.submissions[0][1]
+    assert submitted_args[-1] is None
+
+
 def test_qwen_thinking_request_falls_back_to_plain_mode():
     completion_fn = FakeCompletion()
     client = config.AIClient.__new__(config.AIClient)
@@ -358,5 +372,21 @@ def test_deepseek_thinking_uses_reasoner_model():
     with patch.object(config, "ANALYSIS_THINKING_MODEL", None):
         request_config = client.get_analysis_request_config(thinking_mode=True)
 
+    assert request_config["thinking_applied"] is True
+    assert request_config["effective_model"] == "deepseek-reasoner"
+
+
+def test_analysis_request_config_respects_env_default_thinking_mode():
+    client = config.AIClient.__new__(config.AIClient)
+    client.provider = "deepseek"
+    client.model = "deepseek-chat"
+    client.provider_config = config.PROVIDER_CONFIG["deepseek"]
+    client.thinking_support = client.provider_config["thinking_support"]
+    client.completion_fn = None
+
+    with patch.object(config, "ANALYSIS_THINKING_MODE", True), patch.object(config, "ANALYSIS_THINKING_MODEL", None):
+        request_config = client.get_analysis_request_config(thinking_mode=None)
+
+    assert request_config["thinking_requested"] is True
     assert request_config["thinking_applied"] is True
     assert request_config["effective_model"] == "deepseek-reasoner"
