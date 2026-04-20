@@ -14,7 +14,8 @@ def test_ai_providers():
         ("deepseek", "deepseek-chat"),
         ("openai", "gpt-4"),
         ("glm", "glm-4"),
-        ("qwen", "qwen-turbo")
+        ("qwen", "qwen-turbo"),
+        ("nvidia_nim", "meta/llama-3.1-8b-instruct"),
     ]
 
     for provider, model in providers:

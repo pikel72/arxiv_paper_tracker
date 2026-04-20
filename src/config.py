@@ -54,6 +54,8 @@ KIMI_API_KEY = os.getenv("KIMI_API_KEY")
 KIMI_API_BASE = os.getenv("KIMI_API_BASE")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
+NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY") or os.getenv("NVIDIA_API_KEY")
+NVIDIA_NIM_API_BASE = os.getenv("NVIDIA_NIM_API_BASE") or os.getenv("NVIDIA_API_BASE")
 CUSTOM_API_BASE = os.getenv("CUSTOM_API_BASE")
 CUSTOM_API_KEY = os.getenv("CUSTOM_API_KEY")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "qwen")
@@ -173,6 +175,13 @@ PROVIDER_CONFIG = {
     "siliconflow": {
         "base_url": "https://api.siliconflow.cn/v1",
         "api_key": SILICONFLOW_API_KEY,
+        "thinking_support": "model",
+        "structured_mode": "json",
+        "litellm_provider": "openai",
+    },
+    "nvidia_nim": {
+        "base_url": NVIDIA_NIM_API_BASE or "https://integrate.api.nvidia.com/v1",
+        "api_key": NVIDIA_NIM_API_KEY,
         "thinking_support": "model",
         "structured_mode": "json",
         "litellm_provider": "openai",

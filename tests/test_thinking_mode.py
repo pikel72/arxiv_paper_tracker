@@ -390,3 +390,28 @@ def test_analysis_request_config_respects_env_default_thinking_mode():
     assert request_config["thinking_requested"] is True
     assert request_config["thinking_applied"] is True
     assert request_config["effective_model"] == "deepseek-reasoner"
+
+
+def test_nvidia_nim_provider_uses_openai_compatible_defaults():
+    client = config.AIClient("nvidia_nim", "meta/llama-3.1-8b-instruct")
+
+    assert client.provider == "nvidia_nim"
+    assert client.provider_config["base_url"] == "https://integrate.api.nvidia.com/v1"
+    assert client.provider_config["litellm_provider"] == "openai"
+    assert client.thinking_support == "model"
+
+
+def test_nvidia_nim_thinking_uses_explicit_model_override():
+    client = config.AIClient.__new__(config.AIClient)
+    client.provider = "nvidia_nim"
+    client.model = "meta/llama-3.1-8b-instruct"
+    client.provider_config = config.PROVIDER_CONFIG["nvidia_nim"]
+    client.thinking_support = client.provider_config["thinking_support"]
+    client.completion_fn = None
+
+    with patch.object(config, "ANALYSIS_THINKING_MODEL", "nvidia/nemotron-3-super-120b-a12b"):
+        request_config = client.get_analysis_request_config(thinking_mode=True)
+
+    assert request_config["thinking_requested"] is True
+    assert request_config["thinking_applied"] is True
+    assert request_config["effective_model"] == "nvidia/nemotron-3-super-120b-a12b"
