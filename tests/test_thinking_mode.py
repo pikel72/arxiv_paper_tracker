@@ -393,12 +393,51 @@ def test_analysis_request_config_respects_env_default_thinking_mode():
 
 
 def test_nvidia_nim_provider_uses_openai_compatible_defaults():
-    client = config.AIClient("nvidia_nim", "meta/llama-3.1-8b-instruct")
+    with patch.dict(config.PROVIDER_CONFIG["nvidia_nim"], {"api_key": "test-nvidia-key"}, clear=False):
+        client = config.AIClient("nvidia_nim", "meta/llama-3.1-8b-instruct")
 
     assert client.provider == "nvidia_nim"
     assert client.provider_config["base_url"] == "https://integrate.api.nvidia.com/v1"
     assert client.provider_config["litellm_provider"] == "openai"
     assert client.thinking_support == "model"
+
+
+def test_nvidia_nim_accepts_qwen_prefixed_model_name():
+    with patch.dict(config.PROVIDER_CONFIG["nvidia_nim"], {"api_key": "test-nvidia-key"}, clear=False):
+        client = config.AIClient("nvidia_nim", "qwen/qwen3.5-397b-a17b")
+
+    assert client.provider == "nvidia_nim"
+    assert client.model == "qwen/qwen3.5-397b-a17b"
+
+
+def test_qwen_route_model_requires_explicit_provider_selection():
+    with patch.dict(config.PROVIDER_CONFIG["qwen"], {"api_key": ""}, clear=False), patch.dict(
+        config.PROVIDER_CONFIG["openrouter"], {"api_key": "test-openrouter-key"}, clear=False
+    ):
+        try:
+            config.AIClient("qwen", "qwen/qwen3.5-397b-a17b")
+            assert False, "expected ValueError for missing QWEN_API_KEY"
+        except ValueError as exc:
+            error_text = str(exc)
+
+    assert "QWEN_API_KEY" in error_text
+    assert "AI_PROVIDER=nvidia_nim" in error_text
+    assert "AI_PROVIDER=openrouter" in error_text
+
+
+def test_qwen_route_model_without_keys_raises_actionable_error():
+    with patch.dict(config.PROVIDER_CONFIG["qwen"], {"api_key": ""}, clear=False), patch.dict(
+        config.PROVIDER_CONFIG["openrouter"], {"api_key": ""}, clear=False
+    ):
+        try:
+            config.AIClient("qwen", "qwen/qwen3.5-397b-a17b")
+            assert False, "expected ValueError for missing API key"
+        except ValueError as exc:
+            error_text = str(exc)
+
+    assert "QWEN_API_KEY" in error_text
+    assert "AI_PROVIDER=nvidia_nim" in error_text
+    assert "AI_PROVIDER=openrouter" in error_text
 
 
 def test_nvidia_nim_thinking_uses_explicit_model_override():

@@ -195,6 +195,19 @@ PROVIDER_CONFIG = {
     },
 }
 
+PROVIDER_API_KEY_HINTS = {
+    "deepseek": ["DEEPSEEK_API_KEY"],
+    "openai": ["OPENAI_API_KEY"],
+    "glm": ["GLM_API_KEY"],
+    "qwen": ["QWEN_API_KEY"],
+    "doubao": ["DOUBAO_API_KEY"],
+    "kimi": ["KIMI_API_KEY"],
+    "openrouter": ["OPENROUTER_API_KEY"],
+    "siliconflow": ["SILICONFLOW_API_KEY"],
+    "nvidia_nim": ["NVIDIA_NIM_API_KEY", "NVIDIA_API_KEY"],
+    "custom": ["CUSTOM_API_KEY"],
+}
+
 
 def _read_attr_or_key(obj, name, default=None):
     if obj is None:
@@ -227,15 +240,59 @@ def _coerce_text_block(value):
 
 class AIClient:
     def __init__(self, provider=None, model=None):
-        self.provider = provider or AI_PROVIDER
-        self.model = model or AI_MODEL
+        requested_provider = provider or AI_PROVIDER
+        requested_model = model or AI_MODEL
+
+        self.provider = requested_provider
+        self.model = requested_model
 
         if self.provider not in PROVIDER_CONFIG:
             raise ValueError(f"不支持的AI提供商: {self.provider}")
 
         self.provider_config = PROVIDER_CONFIG[self.provider]
+        self._validate_provider_credentials()
         self.thinking_support = self.provider_config["thinking_support"]
         self.completion_fn = completion
+
+    def _looks_like_prefixed_route_model(self, model_name):
+        normalized = str(model_name or "").strip().lower()
+        if not normalized or "/" not in normalized:
+            return False
+        prefixed_route_prefixes = (
+            "qwen/",
+            "openai/",
+            "anthropic/",
+            "google/",
+            "mistralai/",
+            "deepseek/",
+            "meta/",
+            "meta-llama/",
+            "x-ai/",
+            "moonshotai/",
+            "nvidia/",
+        )
+        return normalized.startswith(prefixed_route_prefixes)
+
+    def _validate_provider_credentials(self):
+        api_key = self.provider_config.get("api_key")
+        if isinstance(api_key, str) and api_key.strip():
+            return
+
+        hint_names = PROVIDER_API_KEY_HINTS.get(self.provider, [])
+        hint_message = " / ".join(hint_names) if hint_names else "对应 API_KEY"
+        error_message = f"AI 提供商 {self.provider} 缺少 API Key，请配置环境变量: {hint_message}"
+
+        if self.provider == "qwen" and self._looks_like_prefixed_route_model(self.model):
+            error_message += (
+                "；检测到模型名使用前缀路由格式（例如 qwen/...）。"
+                "这通常不是 DashScope 直连模型名。"
+                "请显式选择服务商："
+                "AI_PROVIDER=nvidia_nim 并配置 NVIDIA_NIM_API_KEY 或 NVIDIA_API_KEY，"
+                "或 AI_PROVIDER=openrouter 并配置 OPENROUTER_API_KEY，"
+                "或将 AI_MODEL 改为 qwen-plus 等 DashScope 模型并配置 QWEN_API_KEY。"
+            )
+
+        raise ValueError(error_message)
 
     def chat_completion(self, messages, thinking_mode=False, **kwargs):
         content, _, _ = self._do_chat_completion(messages, thinking_mode=thinking_mode, **kwargs)

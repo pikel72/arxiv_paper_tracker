@@ -67,7 +67,14 @@ AI_MODEL=qwen-turbo
 - `kimi`
 - `openrouter`
 - `siliconflow`
+- `nvidia_nim`
 - `custom`
+
+注意：如果模型名是 `qwen/...` 这类前缀路由格式，请显式匹配服务商。
+例如：
+- 使用 NVIDIA NIM 时，设置 `AI_PROVIDER=nvidia_nim`，并配置 `NVIDIA_NIM_API_KEY`（或 `NVIDIA_API_KEY`）。
+- 使用 OpenRouter 时，设置 `AI_PROVIDER=openrouter`，并配置 `OPENROUTER_API_KEY`。
+- 使用 DashScope 直连时，模型名通常应为 `qwen-plus` / `qwen-turbo` 这类形式，并配置 `QWEN_API_KEY`。
 
 ### 完整分析的 thinking 配置
 
@@ -131,6 +138,7 @@ EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
 ### Secrets
 
 - 各 provider 的 API Key
+- `NVIDIA_NIM_API_KEY`（兼容 `NVIDIA_API_KEY`）
 - `SMTP_SERVER`
 - `SMTP_PORT`
 - `SMTP_USERNAME`
@@ -143,6 +151,7 @@ EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
 
 - `AI_PROVIDER`
 - `AI_MODEL`
+- `NVIDIA_NIM_API_BASE`（兼容 `NVIDIA_API_BASE`）
 - `ANALYSIS_THINKING_MODE`
 - `ANALYSIS_THINKING_MODEL`
 - `ANALYSIS_THINKING_BUDGET`
