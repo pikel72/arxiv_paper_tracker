@@ -4,6 +4,7 @@
 
 - 安装与运行: `installation.md`
 - 使用示例: `usage.md`
+- Fork 用户配置指南: `FORK_SETUP.md`
 - 模块文档: `modules/` 目录下的模块说明（`analyzer.md`, `crawler.md`, `emailer.md`, `main.md`, `models.md`, `translator.md`, `utils.md`, `config.md`）
 
 阅读建议：先查看 `installation.md` 获取环境与依赖信息，然后阅读 `usage.md` 快速上手。需要查看代码细节时，进入 `modules/` 下对应模块页面。

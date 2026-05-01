@@ -51,7 +51,24 @@ def test_translate_abstract_falls_back_to_text_mode():
     assert result == fallback
 
 
+def test_translation_prompts_require_verbatim_formula_preservation():
+    paper = DummyPaper(title="On $L^p$ bounds for $\\partial_t u + \\Delta u = 0$")
+    paper.summary = "We prove $\\|u(t)\\|_{L^2} \\le C \\|u_0\\|_{L^2}$ and $u_t + \\Delta u = 0$."
+
+    structured_messages = translator._build_translation_messages(paper, translate_title_only=False)
+    fallback_prompt = translator._build_translation_fallback_prompt(paper, translate_title_only=False)
+
+    structured_prompt = "\n".join(message["content"] for message in structured_messages)
+    assert "逐字符保留" in structured_prompt
+    assert "不能改动公式内部任何字符" in structured_prompt
+    assert "\\alpha" in structured_prompt
+    assert "$u_t + \\Delta u = 0$" in structured_prompt
+    assert "逐字符保留" in fallback_prompt
+    assert "不能改动公式内部任何字符" in fallback_prompt
+
+
 if __name__ == "__main__":
     test_translate_title_uses_structured_result()
     test_translate_abstract_falls_back_to_text_mode()
+    test_translation_prompts_require_verbatim_formula_preservation()
     print("translation structure tests passed")

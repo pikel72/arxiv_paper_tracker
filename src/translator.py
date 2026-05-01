@@ -16,8 +16,9 @@ TRANSLATION_TITLE_REQUIREMENTS = """
 3. 原文中的数学对象、方程名、模型名、性质名、方法名要尽量使用稳定译法；拿不准时宁可直译，也不要擅自意译发挥。
 4. 不要遗漏限定词，如 global, local, quantitative, asymptotic, sharp, generic, axisymmetric, without swirl, critical, supercritical, conditional 等。
 5. existence、uniqueness、regularity、well-posedness、blow-up、scattering、decay、stability、instability、asymptotics、vanishing viscosity 等术语要准确保留其理论含义，不要弱化。
-6. 数学符号、变量名、公式、定理编号、范数记号、函数空间记号应原样保留。
-7. 只返回标题本身，不要附加注释、解释或评价。
+6. 数学符号、变量名、公式、定理编号、范数记号、函数空间记号应原样保留。任何位于 $...$, $$...$$, \\(...\\), \\[...\\] 中的内容都必须逐字符保留, 不得翻译、改写、简化、重排或替换分隔符。
+7. LaTeX 命令必须原样保留, 例如 \\alpha, \\beta, \\nabla, \\partial_t, \\mathbb{R}, \\mathrm{div}, \\lesssim, \\frac{a}{b} 不能被改写成 Unicode 符号、自然语言或其他记法。
+8. 只返回标题本身，不要附加注释、解释或评价。
 """.strip()
 
 TRANSLATION_ABSTRACT_REQUIREMENTS = """
@@ -26,15 +27,19 @@ TRANSLATION_ABSTRACT_REQUIREMENTS = """
 2. 作者“证明了什么”要明确译出，不要把 proved, established, showed, validated 等强结论弱化成“讨论了”“研究了”。
 3. 若原文涉及主要定理、先验估计、函数空间、误差阶、增长率、缩放、稳定性/不稳定性、爆破/散射等内容，应尽量完整保留，不要翻成空泛综述。
 4. 关键术语、方程名、模型名、技术名、函数空间、范数、缩放、误差阶、增长率、公式和符号要尽量保留；如 $L^p$, $H^s$, Sobolev, Besov, Strichartz, Carleman, bootstrap, compactness 等通常不应被模糊化。
-5. 如果原文句子很长，可以拆成更自然的中文句子，但不要改变逻辑关系，不要把条件和结论翻串，也不要把 conjecture、heuristic、formal、conditional 说成严格定理。
-6. 语气保持学术摘要风格，避免口语化、宣传化，也不要额外加入解释、评论或推测。
+5. 任何公式、符号串和 LaTeX 片段都必须按原文逐字符保留, 包括上下标、括号、花括号、分数、积分号、求和号、范数、导数、希腊字母和分隔符。不要把 $u_t + \\Delta u = 0$ 改写成中文描述, 也不要把 \\alpha 改成 α。
+6. 若原文包含显示公式或多处行内公式, 译文中必须继续保留同样的公式片段; 你只能翻译公式外的人类语言部分, 不能改动公式内部任何字符。
+7. 如果原文句子很长，可以拆成更自然的中文句子，但不要改变逻辑关系，不要把条件和结论翻串，也不要把 conjecture、heuristic、formal、conditional 说成严格定理。
+8. 语气保持学术摘要风格，避免口语化、宣传化，也不要额外加入解释、评论或推测。
 """.strip()
 
 
 class StructuredTitleTranslation(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    chinese_title: str = Field(description="面向偏微分方程与分析理论读者的中文标题翻译, 只返回标题文本本身。")
+    chinese_title: str = Field(
+        description="面向偏微分方程与分析理论读者的中文标题翻译, 只返回标题文本本身。若标题中出现任何公式、LaTeX 命令、变量名或符号片段, 必须逐字符原样保留。"
+    )
 
     @field_validator("chinese_title", mode="before")
     @classmethod
@@ -47,7 +52,7 @@ class StructuredTitleTranslation(BaseModel):
 
 class StructuredAbstractTranslation(StructuredTitleTranslation):
     abstract_translation: str = Field(
-        description="论文摘要的完整中文翻译, 保持原文的学术语气和信息, 尽量保留假设、结论强度、函数空间、公式与术语。"
+        description="论文摘要的完整中文翻译, 保持原文的学术语气和信息, 尽量保留假设、结论强度、函数空间、公式与术语。所有公式和 LaTeX 片段都必须逐字符原样保留。"
     )
 
     @field_validator("abstract_translation", mode="before")

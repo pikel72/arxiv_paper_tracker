@@ -48,6 +48,8 @@ cp .env.example .env
 python src/main.py
 ```
 
+Fork 后给同学使用的简明配置说明见 `docs/FORK_SETUP.md`，包含本地单篇文献分析和 GitHub Actions 每日报告推送配置。
+
 ## 主要环境变量
 
 ### AI 基础配置
@@ -171,6 +173,12 @@ EMAIL_SUBJECT_PREFIX=ArXiv论文分析报告
 - `EMAIL_SUBJECT_PREFIX`
 
 工作流文件位于 `.github/workflows/daily_paper_analysis.yml`。
+
+如果 fork 用户要把报告推送到自己的指定仓库，额外配置：
+
+- Secret: `REPORT_PUSH_TOKEN`
+- Variable: `REPORT_TARGET_REPOSITORY`
+- Variable: `REPORT_TARGET_PATH`
 
 ## 本地使用方式
 

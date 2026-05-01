@@ -3,13 +3,13 @@
 ## 手动分析单篇论文
 
 ```bash
-python src/main.py --single 2305.09582
+python src/main.py --arxiv 2305.09582
 ```
 
 可选：设置页数
 
 ```bash
-python src/main.py --single 2305.09582 -p 20
+python src/main.py --arxiv 2305.09582 -p 20
 ```
 
 ## 本地定时或手动运行全部流程
