@@ -68,6 +68,8 @@ ANALYSIS_CLEANUP_ENABLED = _get_bool_env("ANALYSIS_CLEANUP_ENABLED", "off")
 ANALYSIS_CLEANUP_PROVIDER = os.getenv("ANALYSIS_CLEANUP_PROVIDER") or AI_PROVIDER
 ANALYSIS_CLEANUP_MODEL = os.getenv("ANALYSIS_CLEANUP_MODEL") or AI_MODEL
 ANALYSIS_CLEANUP_THINKING_MODE = _get_bool_env("ANALYSIS_CLEANUP_THINKING_MODE", "off")
+AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "120"))
+STRUCTURED_MAX_RETRIES = int(os.getenv("STRUCTURED_MAX_RETRIES", "1"))
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME")
@@ -86,6 +88,7 @@ LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
 CATEGORIES = [cat.strip() for cat in os.getenv("ARXIV_CATEGORIES", "math.AP").split(",") if cat.strip()]
 MAX_PAPERS = int(os.getenv("MAX_PAPERS", "50"))
 SEARCH_DAYS = int(os.getenv("SEARCH_DAYS", "3"))
+DAILY_RUN_BUDGET_SECONDS = int(os.getenv("DAILY_RUN_BUDGET_SECONDS", "0"))
 
 default_priority_topics = [
     "流体力学中偏微分方程的数学理论",
@@ -122,10 +125,10 @@ STRUCTURED_MODE_MAP = {
 
 PROVIDER_CONFIG = {
     "deepseek": {
-        "base_url": "https://api.deepseek.com/v1",
+        "base_url": "https://api.deepseek.com",
         "api_key": DEEPSEEK_API_KEY,
-        "thinking_support": "model",
-        "default_thinking_model": "deepseek-reasoner",
+        "thinking_support": "deepseek_thinking",
+        "default_thinking_model": "deepseek-v4-pro",
         "structured_mode": "json",
         "litellm_provider": "openai",
     },
@@ -346,11 +349,14 @@ class AIClient:
             "thinking_effort": None,
             "extra_body": {},
             "reasoning": None,
+            "reasoning_effort": None,
             "litellm_provider": self.provider_config.get("litellm_provider", "openai"),
             "structured_mode": self.provider_config.get("structured_mode", "json"),
         }
 
         if not thinking_mode:
+            if self.thinking_support == "deepseek_thinking" and self.model.startswith("deepseek-v4"):
+                config["extra_body"]["thinking"] = {"type": "disabled"}
             return config
 
         thinking_model = ANALYSIS_THINKING_MODEL
@@ -381,6 +387,14 @@ class AIClient:
             config["reasoning"] = reasoning
             return config
 
+        if self.thinking_support == "deepseek_thinking":
+            config["thinking_applied"] = True
+            config["effective_model"] = thinking_model or default_thinking_model or self.model
+            config["extra_body"]["thinking"] = {"type": "enabled"}
+            config["reasoning_effort"] = ANALYSIS_THINKING_EFFORT or "high"
+            config["thinking_effort"] = config["reasoning_effort"]
+            return config
+
         if self.thinking_support == "model":
             effective_model = thinking_model or default_thinking_model
             if not effective_model and self._looks_like_thinking_model(self.model):
@@ -400,12 +414,15 @@ class AIClient:
             "api_base": self.provider_config["base_url"],
             "base_url": self.provider_config["base_url"],
             "custom_llm_provider": request_config["litellm_provider"],
+            "timeout": AI_REQUEST_TIMEOUT,
             **kwargs,
         }
         if request_config["extra_body"]:
             create_kwargs["extra_body"] = request_config["extra_body"]
         if request_config["reasoning"]:
             create_kwargs["reasoning"] = request_config["reasoning"]
+        if request_config.get("reasoning_effort"):
+            create_kwargs["reasoning_effort"] = request_config["reasoning_effort"]
         return create_kwargs
 
     def _is_thinking_unsupported_error(self, error_message):
@@ -623,7 +640,7 @@ class AIClient:
                         structured_client = self._get_structured_client(request_config)
                         result, raw_response = structured_client.create_with_completion(
                             response_model=response_model,
-                            max_retries=2,
+                            max_retries=STRUCTURED_MAX_RETRIES,
                             **create_kwargs,
                         )
                         usage = self._usage_to_dict(_read_attr_or_key(raw_response, "usage"))
@@ -672,29 +689,7 @@ class AIClient:
                         except Exception:
                             pass
 
-                        try:
-                            recovered_result, recovered_usage, recovered_state = self._recover_structured_result_from_raw(
-                                create_kwargs,
-                                response_model,
-                                request_config,
-                                fallback_used=index > 0,
-                                fallback_reason=fallback_reason,
-                            )
-                            logger.warning(
-                                "结构化解析失败后，已通过原始响应恢复 JSON 结果: provider=%s, model=%s, error=%s",
-                                self.provider,
-                                request_config["effective_model"],
-                                str(e),
-                            )
-                            return recovered_result, recovered_usage, recovered_state
-                        except Exception as recovery_error:
-                            logger.warning(
-                                "结构化解析失败后的原始响应恢复也失败: provider=%s, model=%s, error=%s",
-                                self.provider,
-                                request_config["effective_model"],
-                                str(recovery_error),
-                            )
-                            raise e
+                        raise e
 
                     if is_thinking_fallback:
                         fallback_reason = str(e)

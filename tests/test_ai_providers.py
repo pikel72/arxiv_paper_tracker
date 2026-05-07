@@ -14,7 +14,7 @@ def test_ai_providers():
     from config import AIClient, PROVIDER_CONFIG
 
     providers = [
-        ("deepseek", "deepseek-chat"),
+        ("deepseek", "deepseek-v4-flash"),
         ("openai", "gpt-4"),
         ("glm", "glm-4"),
         ("qwen", "qwen-turbo"),

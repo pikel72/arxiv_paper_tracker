@@ -6,14 +6,15 @@ import datetime
 import logging
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from logging.handlers import RotatingFileHandler
 
 from config import (
     CATEGORIES, MAX_PAPERS, PAPERS_DIR,
     PRIORITY_ANALYSIS_DELAY, SECONDARY_ANALYSIS_DELAY,
     PRIORITY_TOPICS, SECONDARY_TOPICS, MAX_THREADS,
-    LOG_LEVEL, LOG_DIR, LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT
+    LOG_LEVEL, LOG_DIR, LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT,
+    DAILY_RUN_BUDGET_SECONDS
 )
 from crawler import get_recent_papers
 from analyzer import (
@@ -63,7 +64,12 @@ def process_single_paper_task(paper, index, total, thinking_mode=None):
             pdf_path = download_paper(paper, PAPERS_DIR)
             if pdf_path:
                 time.sleep(PRIORITY_ANALYSIS_DELAY)
-                analysis, _, analysis_meta = analyze_paper(pdf_path, paper, thinking_mode=thinking_mode)
+                analysis, _, analysis_meta = analyze_paper(
+                    pdf_path,
+                    paper,
+                    thinking_mode=thinking_mode,
+                    include_prompt_estimate=True,
+                )
                 return 1, (paper, analysis, pdf_path, analysis_meta)
             else:
                 logger.warning(f"PDF下载失败，降级处理: {paper.title}")
@@ -87,6 +93,45 @@ def process_single_paper_task(paper, index, total, thinking_mode=None):
     except Exception as e:
         logger.error(f"处理论文出错 {paper.title}: {str(e)}")
         return -1, None
+
+
+def record_paper_result(result, priority_analyses, secondary_analyses, irrelevant_papers):
+    p_type, data = result
+    if p_type == 1:
+        priority_analyses.append(data)
+        return True
+    elif p_type == 2:
+        secondary_analyses.append(data)
+        return True
+    elif p_type == 0:
+        irrelevant_papers.append(data)
+        return True
+    return False
+
+
+def build_run_meta(total_papers, completed_papers, partial_run):
+    return {
+        "total_papers": total_papers,
+        "completed_papers": completed_papers,
+        "skipped_papers": max(total_papers - completed_papers, 0),
+        "partial_run": partial_run,
+    }
+
+
+def write_batch_checkpoint(priority_analyses, secondary_analyses, irrelevant_papers, total_papers, partial_run=True):
+    priority_analyses_clean = [
+        (data[0], data[1], data[3] if len(data) > 3 else {})
+        for data in priority_analyses
+    ]
+    completed_papers = len(priority_analyses) + len(secondary_analyses) + len(irrelevant_papers)
+    run_meta = build_run_meta(total_papers, completed_papers, partial_run)
+    return write_to_conclusion(
+        priority_analyses_clean,
+        secondary_analyses,
+        irrelevant_papers,
+        filename="arxiv_analysis_checkpoint.md",
+        run_meta=run_meta,
+    )
 
 def main():
     configure_logging()
@@ -230,24 +275,72 @@ def main():
     irrelevant_papers = []  # 不相关论文的基本信息
     
     logger.info(f"使用 {MAX_THREADS} 个线程并行处理论文...")
-    
-    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        # 提交所有任务
-        futures = [executor.submit(process_single_paper_task, paper, i, len(papers), args.thinking)
-                   for i, paper in enumerate(papers, 1)]
-        
-        # 等待结果
-        for future in futures:
-            try:
-                p_type, data = future.result()
-                if p_type == 1:
-                    priority_analyses.append(data)
-                elif p_type == 2:
-                    secondary_analyses.append(data)
-                elif p_type == 0:
-                    irrelevant_papers.append(data)
-            except Exception as e:
-                logger.error(f"获取线程执行结果出错: {str(e)}")
+
+    deadline = None
+    partial_run = False
+    completed_papers = 0
+    if DAILY_RUN_BUDGET_SECONDS > 0:
+        deadline = start_time + DAILY_RUN_BUDGET_SECONDS
+        logger.info(f"运行时间预算: {DAILY_RUN_BUDGET_SECONDS}秒")
+
+    executor = ThreadPoolExecutor(max_workers=MAX_THREADS)
+    pending = {}
+    paper_iter = iter(enumerate(papers, 1))
+
+    def submit_next_paper():
+        if deadline and time.time() >= deadline:
+            return False
+        try:
+            index, paper = next(paper_iter)
+        except StopIteration:
+            return False
+        future = executor.submit(process_single_paper_task, paper, index, len(papers), args.thinking)
+        pending[future] = (index, paper)
+        return True
+
+    try:
+        for _ in range(MAX_THREADS):
+            if not submit_next_paper():
+                break
+
+        while pending:
+            timeout = None
+            if deadline:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    partial_run = True
+                    break
+                timeout = min(30, remaining)
+
+            done, _ = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
+            if not done:
+                partial_run = True
+                break
+
+            for future in done:
+                index, paper = pending.pop(future)
+                try:
+                    result = future.result()
+                    if record_paper_result(result, priority_analyses, secondary_analyses, irrelevant_papers):
+                        completed_papers += 1
+                    write_batch_checkpoint(
+                        priority_analyses,
+                        secondary_analyses,
+                        irrelevant_papers,
+                        len(papers),
+                        partial_run=True,
+                    )
+                    logger.info(f"已完成并写入检查点: {completed_papers}/{len(papers)}")
+                except Exception as e:
+                    logger.error(f"获取线程执行结果出错 {paper.title}: {str(e)}")
+
+                submit_next_paper()
+    finally:
+        if partial_run:
+            for future in pending:
+                future.cancel()
+            logger.warning(f"达到运行时间预算，停止继续处理。已完成 {completed_papers}/{len(papers)} 篇")
+        executor.shutdown(wait=True, cancel_futures=True)
     
     priority_count = len(priority_analyses)
     secondary_count = len(secondary_analyses)
@@ -266,10 +359,16 @@ def main():
     priority_analyses_clean = [(data[0], data[1], data[3] if len(data) > 3 else {}) for data in priority_analyses]
     
     # 将分析结果写入带时间戳的.md文件
-    result_file = write_to_conclusion(priority_analyses_clean, secondary_analyses, irrelevant_papers)
+    run_meta = build_run_meta(len(papers), completed_papers, partial_run)
+    result_file = write_to_conclusion(
+        priority_analyses_clean,
+        secondary_analyses,
+        irrelevant_papers,
+        run_meta=run_meta,
+    )
     
     # 发送邮件，包含附件
-    email_content = format_email_content(priority_analyses_clean, secondary_analyses, irrelevant_papers)
+    email_content = format_email_content(priority_analyses_clean, secondary_analyses, irrelevant_papers, run_meta=run_meta)
     email_success = send_email(email_content, attachment_path=result_file)
     
     if email_success:

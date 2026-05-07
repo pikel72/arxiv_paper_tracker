@@ -3,6 +3,7 @@
 import datetime
 import os
 import sys
+from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -33,12 +34,10 @@ class DummyPaper:
         return "test.12345"
 
 
-class DummyFuture:
+class DummyFuture(Future):
     def __init__(self, value):
-        self.value = value
-
-    def result(self):
-        return self.value
+        super().__init__()
+        self.set_result(value)
 
 
 class CapturingExecutor:
@@ -175,7 +174,7 @@ def test_structured_completion_returns_reasoning_metadata():
     structured_client = FakeStructuredClient()
     client = config.AIClient.__new__(config.AIClient)
     client.provider = "deepseek"
-    client.model = "deepseek-chat"
+    client.model = "deepseek-v4-flash"
     client.provider_config = config.PROVIDER_CONFIG["deepseek"]
     client.thinking_support = client.provider_config["thinking_support"]
     client.completion_fn = None
@@ -314,7 +313,7 @@ def test_analyze_paper_falls_back_to_prompt_when_structured_path_fails():
     def fake_get_request_config(thinking_mode=False):
         return {
             "provider": "deepseek",
-            "effective_model": "deepseek-reasoner" if thinking_mode else "deepseek-chat",
+            "effective_model": "deepseek-v4-pro" if thinking_mode else "deepseek-v4-flash",
             "thinking_requested": thinking_mode,
             "thinking_applied": thinking_mode,
             "thinking_budget": None,
@@ -361,10 +360,10 @@ def test_analyze_paper_falls_back_to_prompt_when_structured_path_fails():
     assert seen_thinking_modes == [False]
 
 
-def test_deepseek_thinking_uses_reasoner_model():
+def test_deepseek_thinking_uses_v4_pro_with_thinking_params():
     client = config.AIClient.__new__(config.AIClient)
     client.provider = "deepseek"
-    client.model = "deepseek-chat"
+    client.model = "deepseek-v4-flash"
     client.provider_config = config.PROVIDER_CONFIG["deepseek"]
     client.thinking_support = client.provider_config["thinking_support"]
     client.completion_fn = None
@@ -373,13 +372,15 @@ def test_deepseek_thinking_uses_reasoner_model():
         request_config = client.get_analysis_request_config(thinking_mode=True)
 
     assert request_config["thinking_applied"] is True
-    assert request_config["effective_model"] == "deepseek-reasoner"
+    assert request_config["effective_model"] == "deepseek-v4-pro"
+    assert request_config["extra_body"]["thinking"] == {"type": "enabled"}
+    assert request_config["reasoning_effort"] == "high"
 
 
 def test_analysis_request_config_respects_env_default_thinking_mode():
     client = config.AIClient.__new__(config.AIClient)
     client.provider = "deepseek"
-    client.model = "deepseek-chat"
+    client.model = "deepseek-v4-flash"
     client.provider_config = config.PROVIDER_CONFIG["deepseek"]
     client.thinking_support = client.provider_config["thinking_support"]
     client.completion_fn = None
@@ -389,7 +390,21 @@ def test_analysis_request_config_respects_env_default_thinking_mode():
 
     assert request_config["thinking_requested"] is True
     assert request_config["thinking_applied"] is True
-    assert request_config["effective_model"] == "deepseek-reasoner"
+    assert request_config["effective_model"] == "deepseek-v4-pro"
+
+
+def test_deepseek_v4_plain_mode_disables_default_thinking():
+    client = config.AIClient.__new__(config.AIClient)
+    client.provider = "deepseek"
+    client.model = "deepseek-v4-pro"
+    client.provider_config = config.PROVIDER_CONFIG["deepseek"]
+    client.thinking_support = client.provider_config["thinking_support"]
+    client.completion_fn = None
+
+    request_config = client.get_analysis_request_config(thinking_mode=False)
+
+    assert request_config["thinking_applied"] is False
+    assert request_config["extra_body"]["thinking"] == {"type": "disabled"}
 
 
 def test_nvidia_nim_provider_uses_openai_compatible_defaults():

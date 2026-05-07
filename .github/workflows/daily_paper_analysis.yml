@@ -8,7 +8,7 @@ on:
 jobs:
   analyze-papers:
     runs-on: ubuntu-latest
-    timeout-minutes: 40  # 设置超时时间为40分钟
+    timeout-minutes: 60  # 设置超时时间为60分钟
     
     steps:
     - uses: actions/checkout@v5
@@ -83,6 +83,8 @@ jobs:
         ANALYSIS_CLEANUP_PROVIDER: ${{ vars.ANALYSIS_CLEANUP_PROVIDER }}
         ANALYSIS_CLEANUP_MODEL: ${{ vars.ANALYSIS_CLEANUP_MODEL }}
         ANALYSIS_CLEANUP_THINKING_MODE: ${{ vars.ANALYSIS_CLEANUP_THINKING_MODE }}
+        AI_REQUEST_TIMEOUT: ${{ vars.AI_REQUEST_TIMEOUT || '120' }}
+        DAILY_RUN_BUDGET_SECONDS: ${{ vars.DAILY_RUN_BUDGET_SECONDS || '2100' }}
         MAX_THREADS: ${{ vars.MAX_THREADS || '5' }}
         # QQ邮箱服务器配置
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}

@@ -37,11 +37,22 @@ def _format_analysis_audit_line(analysis_meta):
         f"structured={bool(analysis_meta.get('structured_output_validated'))}\n\n"
     )
 
-def format_email_content(priority_analyses, secondary_analyses, irrelevant_papers=None):
+def format_email_content(priority_analyses, secondary_analyses, irrelevant_papers=None, run_meta=None):
     """格式化邮件内容，包含三种类型的论文"""
     today = datetime.datetime.now().strftime('%Y-%m-%d')
+    run_meta = run_meta or {}
     
     content = f"## arXiv论文分析报告 ({today})\n\n"
+    if run_meta:
+        status = "部分完成" if run_meta.get("partial_run") else "完成"
+        content += f"**运行状态**: {status}\n"
+        if run_meta.get("total_papers") is not None:
+            content += f"**计划处理论文数量**: {run_meta.get('total_papers')} 篇\n"
+        if run_meta.get("completed_papers") is not None:
+            content += f"**已完成论文数量**: {run_meta.get('completed_papers')} 篇\n"
+        if run_meta.get("skipped_papers") is not None:
+            content += f"**未完成论文数量**: {run_meta.get('skipped_papers')} 篇\n"
+        content += "\n"
     content += f"**重点关注论文**: {len(priority_analyses)} 篇\n"
     content += f"**了解领域论文**: {len(secondary_analyses)} 篇\n"
     if irrelevant_papers:

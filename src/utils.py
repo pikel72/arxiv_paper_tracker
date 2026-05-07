@@ -203,12 +203,13 @@ def write_pdf_analysis(
     return md_file
 
 
-def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers=None, filename: str = None):
+def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers=None, filename: str = None, run_meta=None):
     today = datetime.datetime.now()
     date_str = today.strftime("%Y-%m-%d")
     time_str = today.strftime("%H-%M-%S")
     datetime_str = today.strftime("%Y-%m-%d %H:%M:%S")
     from config import AI_MODEL
+    run_meta = run_meta or {}
 
     if filename:
         conclusion_file = RESULTS_DIR / filename
@@ -225,8 +226,26 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
         f.write(f"description: 共有 {len(priority_analyses)} 篇重点关注论文, {len(secondary_analyses)} 篇论文可以了解")
         if irrelevant_papers:
             f.write(f", {len(irrelevant_papers)} 篇不相关论文")
-        f.write(f"\nai_model: {AI_MODEL}\n---\n\n")
+        f.write(f"\nai_model: {AI_MODEL}\n")
+        if run_meta:
+            f.write(f"partial_run: {bool(run_meta.get('partial_run'))}\n")
+            if run_meta.get("total_papers") is not None:
+                f.write(f"total_papers: {run_meta.get('total_papers')}\n")
+            if run_meta.get("completed_papers") is not None:
+                f.write(f"completed_papers: {run_meta.get('completed_papers')}\n")
+            if run_meta.get("skipped_papers") is not None:
+                f.write(f"skipped_papers: {run_meta.get('skipped_papers')}\n")
+        f.write("---\n\n")
         f.write(f"**生成时间**: {today.strftime('%Y年%m月%d日 %H:%M:%S')}\n\n")
+        if run_meta:
+            status = "部分完成" if run_meta.get("partial_run") else "完成"
+            f.write(f"**运行状态**: {status}\n\n")
+            if run_meta.get("total_papers") is not None:
+                f.write(f"**计划处理论文数量**: {run_meta.get('total_papers')}\n\n")
+            if run_meta.get("completed_papers") is not None:
+                f.write(f"**已完成论文数量**: {run_meta.get('completed_papers')}\n\n")
+            if run_meta.get("skipped_papers") is not None:
+                f.write(f"**未完成论文数量**: {run_meta.get('skipped_papers')}\n\n")
         f.write(f"**重点关注论文数量**: {len(priority_analyses)}\n\n")
         f.write(f"**了解领域论文数量**: {len(secondary_analyses)}\n\n")
         if irrelevant_papers:
@@ -262,6 +281,27 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                     f.write(f"**摘要**: {paper.summary}\n\n")
                 f.write(f"**Comment**: {paper_comment if paper_comment else '无'}\n\n")
                 f.write(f"**链接**: {paper.entry_id}\n\n")
+                if analysis_meta:
+                    f.write("**分析审计**\n\n")
+                    f.write(f"- provider: {analysis_meta.get('provider', 'unknown')}\n")
+                    f.write(f"- model: {analysis_meta.get('effective_model', ai_model)}\n")
+                    f.write(f"- thinking_applied: {bool(analysis_meta.get('thinking_applied'))}\n")
+                    f.write(f"- fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
+                    f.write(f"- reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
+                    f.write(f"- structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
+                    f.write(f"- structured_output_fallback: {bool(analysis_meta.get('structured_output_fallback'))}\n")
+                    f.write(f"- cleanup_applied: {bool(analysis_meta.get('cleanup_applied'))}\n")
+                    f.write(f"- cleanup_structured_validated: {bool(analysis_meta.get('cleanup_structured_validated'))}\n")
+                    if analysis_meta.get("estimated_prompt_tokens") is not None:
+                        f.write(f"- estimated_prompt_tokens: {analysis_meta.get('estimated_prompt_tokens')}\n")
+                    if analysis_meta.get("pdf_text_pages") is not None:
+                        f.write(f"- pdf_text_pages: {analysis_meta.get('pdf_text_pages')}\n")
+                    if analysis_meta.get("pdf_text_length") is not None:
+                        f.write(f"- pdf_text_length: {analysis_meta.get('pdf_text_length')}\n")
+                    if analysis_meta.get("structured_error"):
+                        error_text = str(analysis_meta.get("structured_error")).replace("\n", " ").strip()
+                        f.write(f"- structured_error: {error_text[:500]}\n")
+                    f.write("\n")
                 f.write(f"{analysis_body}\n\n")
                 f.write("---\n\n")
 
