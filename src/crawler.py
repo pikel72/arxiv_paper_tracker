@@ -14,8 +14,18 @@ from models import SimplePaper
 logger = logging.getLogger(__name__)
 
 
+def _get_retry_after_seconds(response, fallback: int) -> int:
+    retry_after = response.headers.get("Retry-After") if response is not None else None
+    if retry_after:
+        try:
+            return max(int(retry_after), fallback)
+        except (TypeError, ValueError):
+            pass
+    return fallback
+
+
 def _fetch_arxiv_response(url: str, max_retries: int = 4, timeout: int = 30):
-    backoff = 2
+    backoff = 10
     last_status = None
 
     for attempt in range(1, max_retries + 1):
@@ -26,8 +36,9 @@ def _fetch_arxiv_response(url: str, max_retries: int = 4, timeout: int = 30):
 
             last_status = response.status_code
             if response.status_code in {429, 500, 502, 503, 504} and attempt < max_retries:
-                logger.warning(f"arXiv 暂时不可用，状态码: {response.status_code}，第 {attempt}/{max_retries} 次重试")
-                time.sleep(backoff)
+                wait_time = _get_retry_after_seconds(response, backoff)
+                logger.warning(f"arXiv 暂时不可用，状态码: {response.status_code}，第 {attempt}/{max_retries} 次重试，等待 {wait_time}s")
+                time.sleep(wait_time)
                 backoff *= 2
                 continue
 

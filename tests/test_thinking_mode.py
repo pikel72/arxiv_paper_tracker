@@ -175,7 +175,7 @@ def test_structured_completion_returns_reasoning_metadata():
     client = config.AIClient.__new__(config.AIClient)
     client.provider = "deepseek"
     client.model = "deepseek-v4-flash"
-    client.provider_config = config.PROVIDER_CONFIG["deepseek"]
+    client.provider_config = {**config.PROVIDER_CONFIG["deepseek"], "structured_mode": "tools"}
     client.thinking_support = client.provider_config["thinking_support"]
     client.completion_fn = None
 
@@ -194,7 +194,6 @@ def test_structured_completion_returns_reasoning_metadata():
 
 
 def test_structured_completion_can_recover_json_from_reasoning_content():
-    broken_client = BrokenStructuredClient(Exception("1 validation error for StructuredPaperAnalysis"))
     client = config.AIClient.__new__(config.AIClient)
     client.provider = "qwen"
     client.model = "qwen3-max"
@@ -205,26 +204,92 @@ def test_structured_completion_can_recover_json_from_reasoning_content():
         usage = SimpleNamespace(prompt_tokens=7, completion_tokens=8, total_tokens=15)
         message = SimpleNamespace(
             content="",
-            reasoning_content='{"chinese_title":"恢复标题","research_background":"背景","main_results":"结果","methods_and_tools":"方法","comparison_with_previous_work":"比较"}',
+            reasoning_content='{"priority":2,"reason":"Strichartz估计与散射"}',
         )
         choice = SimpleNamespace(message=message)
         return SimpleNamespace(choices=[choice], usage=usage, model=kwargs["model"])
 
     client.completion_fn = fake_completion
 
-    with patch.object(client, "_get_structured_client", return_value=broken_client):
-        result, usage, response_state = client.structured_chat_completion_with_usage(
-            messages=[{"role": "user", "content": "hello"}],
-            response_model=analyzer.StructuredPaperAnalysis,
-            thinking_mode=True,
-            return_response_state=True,
-        )
+    result, usage, response_state = client.structured_chat_completion_with_usage(
+        messages=[{"role": "user", "content": "hello"}],
+        response_model=analyzer.StructuredTopicClassification,
+        thinking_mode=True,
+        return_response_state=True,
+        json_schema_prompt=True,
+    )
 
-    assert result.chinese_title == "恢复标题"
+    assert result.priority == 2
     assert usage["total_tokens"] == 15
     assert response_state["thinking_applied"] is True
     assert response_state["fallback_used"] is False
     assert response_state["reasoning_content_present"] is True
+
+
+def test_structured_json_retries_after_invalid_response():
+    calls = []
+    client = config.AIClient.__new__(config.AIClient)
+    client.provider = "qwen"
+    client.model = "qwen-plus"
+    client.provider_config = config.PROVIDER_CONFIG["qwen"]
+    client.thinking_support = client.provider_config["thinking_support"]
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        usage = SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+        if len(calls) == 1:
+            message = SimpleNamespace(content='{"priority":2}', reasoning_content=None)
+        else:
+            message = SimpleNamespace(content='{"priority":2,"reason":"Strichartz估计"}', reasoning_content=None)
+        choice = SimpleNamespace(message=message)
+        return SimpleNamespace(choices=[choice], usage=usage, model=kwargs["model"])
+
+    client.completion_fn = fake_completion
+
+    result, usage, response_state = client.structured_chat_completion_with_usage(
+        messages=[{"role": "user", "content": "hello"}],
+        response_model=analyzer.StructuredTopicClassification,
+        return_response_state=True,
+        json_schema_prompt=True,
+    )
+
+    assert result.priority == 2
+    assert len(calls) == 2
+    assert calls[0]["response_format"] == {"type": "json_object"}
+    assert "schema" in calls[0]["messages"][0]["content"]
+    assert usage["total_tokens"] == 2
+    assert response_state["structured_output_mode"] == "json_schema_prompt"
+
+
+def test_structured_json_drops_unsupported_response_format():
+    calls = []
+    client = config.AIClient.__new__(config.AIClient)
+    client.provider = "qwen"
+    client.model = "qwen-plus"
+    client.provider_config = config.PROVIDER_CONFIG["qwen"]
+    client.thinking_support = client.provider_config["thinking_support"]
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        if "response_format" in kwargs:
+            raise Exception("unsupported parameter: response_format")
+        usage = SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+        message = SimpleNamespace(content='{"priority":2,"reason":"Strichartz估计"}', reasoning_content=None)
+        choice = SimpleNamespace(message=message)
+        return SimpleNamespace(choices=[choice], usage=usage, model=kwargs["model"])
+
+    client.completion_fn = fake_completion
+
+    result, usage = client.structured_chat_completion_with_usage(
+        messages=[{"role": "user", "content": "hello"}],
+        response_model=analyzer.StructuredTopicClassification,
+        json_schema_prompt=True,
+    )
+
+    assert result.priority == 2
+    assert len(calls) == 2
+    assert "response_format" not in calls[1]
+    assert usage["total_tokens"] == 2
 
 
 def test_build_analysis_cache_key_separates_thinking_and_plain():
@@ -364,7 +429,7 @@ def test_deepseek_thinking_uses_v4_pro_with_thinking_params():
     client = config.AIClient.__new__(config.AIClient)
     client.provider = "deepseek"
     client.model = "deepseek-v4-flash"
-    client.provider_config = config.PROVIDER_CONFIG["deepseek"]
+    client.provider_config = {**config.PROVIDER_CONFIG["deepseek"], "structured_mode": "tools"}
     client.thinking_support = client.provider_config["thinking_support"]
     client.completion_fn = None
 
@@ -381,7 +446,7 @@ def test_analysis_request_config_respects_env_default_thinking_mode():
     client = config.AIClient.__new__(config.AIClient)
     client.provider = "deepseek"
     client.model = "deepseek-v4-flash"
-    client.provider_config = config.PROVIDER_CONFIG["deepseek"]
+    client.provider_config = {**config.PROVIDER_CONFIG["deepseek"], "structured_mode": "tools"}
     client.thinking_support = client.provider_config["thinking_support"]
     client.completion_fn = None
 

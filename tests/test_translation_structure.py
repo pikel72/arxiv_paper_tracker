@@ -32,10 +32,11 @@ def test_translate_title_uses_structured_result():
     with patch("translator.get_cached_translation", return_value=None), patch("translator.cache_translation"), patch(
         "translator.ai_client.structured_chat_completion_with_usage",
         return_value=(structured, {}),
-    ):
+    ) as structured_call:
         result = translator.translate_abstract_with_deepseek(paper, translate_title_only=True, use_cache=True)
 
     assert result == "**中文标题**: 测试标题"
+    assert structured_call.call_args.kwargs["json_schema_prompt"] is True
 
 
 def test_translate_abstract_falls_back_to_text_mode():

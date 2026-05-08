@@ -13,8 +13,7 @@ from config import (
     CATEGORIES, MAX_PAPERS, PAPERS_DIR,
     PRIORITY_ANALYSIS_DELAY, SECONDARY_ANALYSIS_DELAY,
     PRIORITY_TOPICS, SECONDARY_TOPICS, MAX_THREADS,
-    LOG_LEVEL, LOG_DIR, LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT,
-    DAILY_RUN_BUDGET_SECONDS
+    LOG_LEVEL, LOG_DIR, LOG_FILE, LOG_MAX_BYTES, LOG_BACKUP_COUNT
 )
 from crawler import get_recent_papers
 from analyzer import (
@@ -276,20 +275,14 @@ def main():
     
     logger.info(f"使用 {MAX_THREADS} 个线程并行处理论文...")
 
-    deadline = None
     partial_run = False
     completed_papers = 0
-    if DAILY_RUN_BUDGET_SECONDS > 0:
-        deadline = start_time + DAILY_RUN_BUDGET_SECONDS
-        logger.info(f"运行时间预算: {DAILY_RUN_BUDGET_SECONDS}秒")
 
     executor = ThreadPoolExecutor(max_workers=MAX_THREADS)
     pending = {}
     paper_iter = iter(enumerate(papers, 1))
 
     def submit_next_paper():
-        if deadline and time.time() >= deadline:
-            return False
         try:
             index, paper = next(paper_iter)
         except StopIteration:
@@ -304,18 +297,9 @@ def main():
                 break
 
         while pending:
-            timeout = None
-            if deadline:
-                remaining = deadline - time.time()
-                if remaining <= 0:
-                    partial_run = True
-                    break
-                timeout = min(30, remaining)
-
-            done, _ = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
             if not done:
-                partial_run = True
-                break
+                continue
 
             for future in done:
                 index, paper = pending.pop(future)
@@ -323,24 +307,24 @@ def main():
                     result = future.result()
                     if record_paper_result(result, priority_analyses, secondary_analyses, irrelevant_papers):
                         completed_papers += 1
-                    write_batch_checkpoint(
-                        priority_analyses,
-                        secondary_analyses,
-                        irrelevant_papers,
-                        len(papers),
-                        partial_run=True,
-                    )
+                    try:
+                        write_batch_checkpoint(
+                            priority_analyses,
+                            secondary_analyses,
+                            irrelevant_papers,
+                            len(papers),
+                            partial_run=True,
+                        )
+                    except Exception as checkpoint_error:
+                        logger.error(f"写入检查点失败: {str(checkpoint_error)}")
                     logger.info(f"已完成并写入检查点: {completed_papers}/{len(papers)}")
                 except Exception as e:
                     logger.error(f"获取线程执行结果出错 {paper.title}: {str(e)}")
 
                 submit_next_paper()
     finally:
-        if partial_run:
-            for future in pending:
-                future.cancel()
-            logger.warning(f"达到运行时间预算，停止继续处理。已完成 {completed_papers}/{len(papers)} 篇")
-        executor.shutdown(wait=True, cancel_futures=True)
+        if hasattr(executor, "shutdown"):
+            executor.shutdown(wait=True, cancel_futures=True)
     
     priority_count = len(priority_analyses)
     secondary_count = len(secondary_analyses)

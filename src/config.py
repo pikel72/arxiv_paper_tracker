@@ -1,6 +1,7 @@
 # config.py - 配置文件
 
 import ast
+import json
 import logging
 import os
 import re
@@ -88,7 +89,6 @@ LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
 CATEGORIES = [cat.strip() for cat in os.getenv("ARXIV_CATEGORIES", "math.AP").split(",") if cat.strip()]
 MAX_PAPERS = int(os.getenv("MAX_PAPERS", "50"))
 SEARCH_DAYS = int(os.getenv("SEARCH_DAYS", "3"))
-DAILY_RUN_BUDGET_SECONDS = int(os.getenv("DAILY_RUN_BUDGET_SECONDS", "0"))
 
 default_priority_topics = [
     "流体力学中偏微分方程的数学理论",
@@ -313,6 +313,7 @@ class AIClient:
         response_model,
         thinking_mode=False,
         return_response_state=False,
+        json_schema_prompt=False,
         **kwargs,
     ):
         result, usage, response_state = self._do_chat_completion(
@@ -320,6 +321,7 @@ class AIClient:
             thinking_mode=thinking_mode,
             response_model=response_model,
             structured=True,
+            json_schema_prompt=json_schema_prompt,
             **kwargs,
         )
         if return_response_state:
@@ -424,6 +426,31 @@ class AIClient:
         if request_config.get("reasoning_effort"):
             create_kwargs["reasoning_effort"] = request_config["reasoning_effort"]
         return create_kwargs
+
+    def _build_structured_json_messages(self, messages, response_model):
+        schema = response_model.model_json_schema()
+        schema_text = json.dumps(schema, ensure_ascii=False)
+        instruction = (
+            "你必须只返回一个可被 JSON.parse 解析的 JSON object, 不要使用 Markdown 代码块, 不要添加解释文字。"
+            "JSON 必须严格符合以下 schema, 不得省略必需字段, 不得添加 schema 外字段。\n\n"
+            f"{schema_text}"
+        )
+        structured_messages = list(messages)
+        if structured_messages and structured_messages[0].get("role") == "system":
+            structured_messages[0] = {
+                **structured_messages[0],
+                "content": f"{structured_messages[0].get('content', '')}\n\n{instruction}",
+            }
+        else:
+            structured_messages.insert(0, {"role": "system", "content": instruction})
+        return structured_messages
+
+    def _is_response_format_unsupported_error(self, error_message):
+        normalized = (error_message or "").lower()
+        return "response_format" in normalized and any(
+            keyword in normalized
+            for keyword in ["unsupported", "not support", "unknown parameter", "unrecognized", "invalid parameter"]
+        )
 
     def _is_thinking_unsupported_error(self, error_message):
         normalized = (error_message or "").lower()
@@ -615,6 +642,32 @@ class AIClient:
         mode = STRUCTURED_MODE_MAP.get(structured_mode, instructor.Mode.JSON)
         return instructor.from_litellm(self.completion_fn, mode=mode)
 
+    def _do_structured_completion(self, messages, response_model, request_config, base_kwargs, json_schema_prompt=False):
+        if json_schema_prompt:
+            structured_messages = self._build_structured_json_messages(messages, response_model)
+            create_kwargs = self._create_kwargs(structured_messages, request_config, base_kwargs)
+            create_kwargs["response_format"] = {"type": "json_object"}
+            try:
+                response = self.completion_fn(**create_kwargs)
+            except Exception as e:
+                if not self._is_response_format_unsupported_error(str(e)):
+                    raise
+                create_kwargs.pop("response_format", None)
+                response = self.completion_fn(**create_kwargs)
+            result = self._parse_structured_response(response_model, response)
+            usage = self._usage_to_dict(_read_attr_or_key(response, "usage"))
+            return result, usage, response, "json_schema_prompt"
+
+        create_kwargs = self._create_kwargs(messages, request_config, base_kwargs)
+        structured_client = self._get_structured_client(request_config)
+        result, raw_response = structured_client.create_with_completion(
+            response_model=response_model,
+            max_retries=STRUCTURED_MAX_RETRIES,
+            **create_kwargs,
+        )
+        usage = self._usage_to_dict(_read_attr_or_key(raw_response, "usage"))
+        return result, usage, raw_response, None
+
     def _do_chat_completion(self, messages, thinking_mode=False, response_model=None, structured=False, **kwargs):
         import random
         import time
@@ -622,6 +675,7 @@ class AIClient:
         max_retries = 3
         backoff_factor = 2
         base_kwargs = dict(kwargs)
+        json_schema_prompt = bool(base_kwargs.pop("json_schema_prompt", False))
         requested_config = self.get_analysis_request_config(thinking_mode=thinking_mode)
 
         if thinking_mode and not requested_config["thinking_applied"]:
@@ -637,19 +691,21 @@ class AIClient:
                 try:
                     create_kwargs = self._create_kwargs(messages, request_config, base_kwargs)
                     if structured:
-                        structured_client = self._get_structured_client(request_config)
-                        result, raw_response = structured_client.create_with_completion(
-                            response_model=response_model,
-                            max_retries=STRUCTURED_MAX_RETRIES,
-                            **create_kwargs,
+                        result, usage, raw_response, structured_mode_override = self._do_structured_completion(
+                            messages,
+                            response_model,
+                            request_config,
+                            base_kwargs,
+                            json_schema_prompt=json_schema_prompt,
                         )
-                        usage = self._usage_to_dict(_read_attr_or_key(raw_response, "usage"))
                         response_state = self._build_response_state(
                             request_config,
                             raw_response,
                             fallback_used=index > 0,
                             fallback_reason=fallback_reason,
                         )
+                        if structured_mode_override:
+                            response_state["structured_output_mode"] = structured_mode_override
                         return result, usage, response_state
 
                     response = self.completion_fn(**create_kwargs)
@@ -688,8 +744,6 @@ class AIClient:
                             return recovered_result, recovered_usage, recovered_state
                         except Exception:
                             pass
-
-                        raise e
 
                     if is_thinking_fallback:
                         fallback_reason = str(e)

@@ -284,7 +284,7 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                 if analysis_meta:
                     f.write("**分析审计**\n\n")
                     f.write(f"- provider: {analysis_meta.get('provider', 'unknown')}\n")
-                    f.write(f"- model: {analysis_meta.get('effective_model', ai_model)}\n")
+                    f.write(f"- model: {analysis_meta.get('effective_model', AI_MODEL)}\n")
                     f.write(f"- thinking_applied: {bool(analysis_meta.get('thinking_applied'))}\n")
                     f.write(f"- fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
                     f.write(f"- reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")

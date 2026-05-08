@@ -31,11 +31,12 @@ def test_check_topic_relevance_uses_structured_result():
     with patch("analyzer.get_cached_classification", return_value=None), patch("analyzer.cache_classification"), patch(
         "analyzer.ai_client.structured_chat_completion_with_usage",
         return_value=(StructuredTopicClassification(priority=1, reason="涉及Euler方程与无粘阻尼"), {}),
-    ):
+    ) as structured_call:
         priority, reason = check_topic_relevance(paper)
 
     assert priority == 1
     assert reason == "涉及Euler方程与无粘阻尼"
+    assert structured_call.call_args.kwargs["json_schema_prompt"] is True
 
 
 def test_check_topic_relevance_falls_back_to_text_mode():
@@ -49,6 +50,13 @@ def test_check_topic_relevance_falls_back_to_text_mode():
 
     assert priority == 1
     assert reason == "涉及Euler方程与无粘阻尼"
+
+
+def test_structured_topic_classification_truncates_long_reason():
+    result = StructuredTopicClassification(priority=2, reason="双曲拟线性方程组、加权Sobolev空间、Goursat问题、Einstein方程的谐波规范")
+
+    assert result.priority == 2
+    assert len(result.reason) <= 40
 
 
 if __name__ == "__main__":

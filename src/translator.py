@@ -157,12 +157,14 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
                 structured = ai_client.structured_chat_completion_with_usage(
                     messages=messages,
                     response_model=StructuredTitleTranslation,
+                    json_schema_prompt=True,
                 )[0]
                 translation = _render_title_translation(structured)
             else:
                 structured = ai_client.structured_chat_completion_with_usage(
                     messages=messages,
                     response_model=StructuredAbstractTranslation,
+                    json_schema_prompt=True,
                 )[0]
                 translation = _render_abstract_translation(structured)
         except Exception as structured_error:

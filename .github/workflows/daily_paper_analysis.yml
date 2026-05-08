@@ -84,7 +84,6 @@ jobs:
         ANALYSIS_CLEANUP_MODEL: ${{ vars.ANALYSIS_CLEANUP_MODEL }}
         ANALYSIS_CLEANUP_THINKING_MODE: ${{ vars.ANALYSIS_CLEANUP_THINKING_MODE }}
         AI_REQUEST_TIMEOUT: ${{ vars.AI_REQUEST_TIMEOUT || '120' }}
-        DAILY_RUN_BUDGET_SECONDS: ${{ vars.DAILY_RUN_BUDGET_SECONDS || '2100' }}
         MAX_THREADS: ${{ vars.MAX_THREADS || '5' }}
         # QQ邮箱服务器配置
         SMTP_SERVER: ${{ secrets.SMTP_SERVER }}

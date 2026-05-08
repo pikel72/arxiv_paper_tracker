@@ -116,7 +116,7 @@ class StructuredTopicClassification(BaseModel):
     @model_validator(mode="after")
     def validate_reason_length(self):
         if self.priority in (1, 2) and len(self.reason) > 40:
-            raise ValueError("priority 1/2 的 reason 应保持简洁")
+            self.reason = self.reason[:40].rstrip("，、；;,. ")
         return self
 
 
@@ -809,6 +809,7 @@ def check_topic_relevance(paper):
             structured, _ = ai_client.structured_chat_completion_with_usage(
                 messages=_build_classification_messages(paper, abstract),
                 response_model=StructuredTopicClassification,
+                json_schema_prompt=True,
             )
             priority = structured.priority
             reason = structured.reason
