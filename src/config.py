@@ -413,7 +413,6 @@ class AIClient:
             "model": request_config["effective_model"],
             "messages": messages,
             "api_key": self.provider_config["api_key"],
-            "api_base": self.provider_config["base_url"],
             "base_url": self.provider_config["base_url"],
             "custom_llm_provider": request_config["litellm_provider"],
             "timeout": AI_REQUEST_TIMEOUT,

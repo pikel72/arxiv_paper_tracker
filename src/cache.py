@@ -35,7 +35,7 @@ def _get_cache_path(cache_type: str, key: str) -> Path:
     """获取缓存文件路径"""
     _ensure_cache_dir()
     # 使用 MD5 哈希处理 key，避免文件名过长或含特殊字符
-    safe_key = hashlib.md5(key.encode()).hexdigest()[:16]
+    safe_key = hashlib.md5(key.encode()).hexdigest()
     return CACHE_DIR / f"{cache_type}_{safe_key}.json"
 
 

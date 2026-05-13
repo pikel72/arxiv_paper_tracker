@@ -2,10 +2,14 @@
 
 import datetime
 import logging
+import random
+import re
+import time
 from pathlib import Path
 
 from analyzer import extract_analysis_title, render_analysis_body
-from config import RESULTS_DIR
+from config import AI_MODEL, RESULTS_DIR
+from translator import translate_abstract_with_deepseek
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +140,6 @@ def write_single_analysis(
     analysis_meta: dict = None,
     thinking_mode: bool = None,
 ):
-    import re
-
     today = datetime.datetime.now()
     date_str = today.strftime("%Y-%m-%d")
     time_str = today.strftime("%H-%M-%S")
@@ -148,14 +150,12 @@ def write_single_analysis(
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     author_names = [author.name for author in paper.authors]
     title = re.sub(r"\s+", " ", paper.title).strip()
-    from translator import translate_abstract_with_deepseek
     translation = translate_abstract_with_deepseek(paper, translate_title_only=False, use_cache=True)
     chinese_title = _resolve_priority_title(title, analysis, translation)
     analysis_body = _strip_analysis_heading(analysis)
     abstract_translation = _extract_abstract_translation(translation)
     paper_comment = _get_paper_comment(paper)
     datetime_str = today.strftime("%Y-%m-%d %H:%M:%S")
-    from config import AI_MODEL
     resolved_thinking_mode = bool((analysis_meta or {}).get("thinking_requested", thinking_mode))
 
     with open(md_file, "w", encoding="utf-8") as f:
@@ -206,7 +206,6 @@ def write_pdf_analysis(
     chinese_title = _extract_chinese_title(analysis) or pdf_path.stem
     analysis_body = _strip_analysis_heading(analysis)
     datetime_str = today.strftime("%Y-%m-%d %H:%M:%S")
-    from config import AI_MODEL
     resolved_thinking_mode = bool((analysis_meta or {}).get("thinking_requested", thinking_mode))
 
     with open(md_file, "w", encoding="utf-8") as f:
@@ -231,7 +230,6 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
     date_str = today.strftime("%Y-%m-%d")
     time_str = today.strftime("%H-%M-%S")
     datetime_str = today.strftime("%Y-%m-%d %H:%M:%S")
-    from config import AI_MODEL
     run_meta = run_meta or {}
 
     if filename:
@@ -280,10 +278,8 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             for i, entry in enumerate(priority_analyses, 1):
                 paper, analysis, analysis_meta = _split_priority_entry(entry)
                 author_names = [author.name for author in paper.authors]
-                import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
 
-                from translator import translate_abstract_with_deepseek
                 translation = translate_abstract_with_deepseek(paper, translate_title_only=False, use_cache=True)
                 chinese_title = _resolve_priority_title(title, analysis, translation)
                 analysis_body = _strip_analysis_heading(analysis)
@@ -312,7 +308,6 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             f.write("# 了解领域论文（摘要翻译）\n\n")
             for i, (paper, translation) in enumerate(secondary_analyses, 1):
                 author_names = [author.name for author in paper.authors]
-                import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
                 chinese_title = _extract_chinese_title(translation)
 
@@ -332,7 +327,6 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
             f.write("# 不相关论文（基本信息）\n\n")
             for i, (paper, reason, title_translation) in enumerate(irrelevant_papers, 1):
                 author_names = [author.name for author in paper.authors]
-                import re
                 title = re.sub(r"\s+", " ", paper.title).strip()
                 chinese_title = _extract_chinese_title(title_translation)
 
@@ -364,9 +358,6 @@ def delete_pdf(pdf_path):
 
 
 def download_paper(paper, output_dir):
-    import random
-    import time
-
     output_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = output_dir / f"{paper.get_short_id().replace('/', '_')}.pdf"
 

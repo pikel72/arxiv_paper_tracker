@@ -4,6 +4,7 @@
 import argparse
 import datetime
 import logging
+import random
 import sys
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -50,7 +51,6 @@ def configure_logging():
 def process_single_paper_task(paper, index, total, thinking_mode=None):
     """处理单篇论文的任务函数，用于多线程"""
     try:
-        import random
         time.sleep(random.uniform(0, 2))
         
         logger.info(f"正在处理论文 {index}/{total}: {paper.title}")

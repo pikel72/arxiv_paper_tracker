@@ -168,16 +168,10 @@ def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[
     # 解析XML
     feed = feedparser.parse(response.content)
     logger.info(f"API返回的总条目数: {len(feed.entries)}")
-    
+
     papers = []
     for entry in feed.entries:
-        title = entry.title if hasattr(entry, 'title') else '(无标题)'
-        submit_date = datetime.datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-        if start_time <= submit_date < end_time:
-            logger.info(f"通过筛选: {title} | 提交时间: {submit_date}")
-            papers.append(SimplePaper(entry))
-        else:
-            logger.info(f"未通过筛选: {title} | 提交时间: {submit_date}")
-    
+        papers.append(SimplePaper(entry))
+
     logger.info(f"找到{len(papers)}篇符合条件的论文")
     return papers

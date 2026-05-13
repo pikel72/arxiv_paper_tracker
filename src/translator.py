@@ -146,6 +146,7 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
             return cached
 
     try:
+        usage = {}
         if translate_title_only:
             logger.info(f"正在翻译标题: {paper.title}")
         else:
@@ -154,18 +155,18 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
         try:
             messages = _build_translation_messages(paper, translate_title_only=translate_title_only)
             if translate_title_only:
-                structured = ai_client.structured_chat_completion_with_usage(
+                structured, usage = ai_client.structured_chat_completion_with_usage(
                     messages=messages,
                     response_model=StructuredTitleTranslation,
                     json_schema_prompt=True,
-                )[0]
+                )
                 translation = _render_title_translation(structured)
             else:
-                structured = ai_client.structured_chat_completion_with_usage(
+                structured, usage = ai_client.structured_chat_completion_with_usage(
                     messages=messages,
                     response_model=StructuredAbstractTranslation,
                     json_schema_prompt=True,
-                )[0]
+                )
                 translation = _render_abstract_translation(structured)
         except Exception as structured_error:
             logger.warning("结构化翻译失败，将回退到普通文本模式: %s", str(structured_error))
@@ -184,13 +185,21 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
                 if line.startswith("**中文标题**:"):
                     translated_title = line.replace("**中文标题**:", "").strip()
                     break
-        
+
         log_title = translated_title if translated_title else paper.title
-        
+
         if translate_title_only:
             logger.info(f"标题翻译完成: {log_title}")
         else:
             logger.info(f"摘要翻译完成: {log_title}")
+
+        if usage:
+            logger.info(
+                "翻译Token用量: 输入=%s, 输出=%s, 总计=%s",
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                usage.get("total_tokens", 0),
+            )
         
         if use_cache:
             cache_translation(arxiv_id, translation, title_only=translate_title_only)

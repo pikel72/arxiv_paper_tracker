@@ -1,13 +1,20 @@
 # emailer.py - 发送邮件模块
 
 import datetime
+import html as html_mod
 import logging
+import re
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from jinja2 import Template
 
 from analyzer import extract_analysis_title, render_analysis_body
+
+
+def _esc(text):
+    """Escape HTML special characters in user-controlled content for Markdown-to-HTML conversion."""
+    return html_mod.escape(str(text), quote=False)
 from config import (
     SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, 
     EMAIL_FROM, EMAIL_TO, EMAIL_SUBJECT_PREFIX, RESULTS_DIR
@@ -65,56 +72,59 @@ def format_email_content(priority_analyses, secondary_analyses, irrelevant_paper
         content += "### 🔥 重点关注论文（完整分析）\n\n"
         for i, entry in enumerate(priority_analyses, 1):
             paper, analysis, analysis_meta = _split_priority_entry(entry)
-            author_names = [author.name for author in paper.authors]
+            author_names = [_esc(author.name) for author in paper.authors]
             chinese_title = extract_analysis_title(analysis, paper.title)
             analysis_body = render_analysis_body(analysis)
+            esc_title = _esc(paper.title)
 
-            content += f"#### {i}. {chinese_title if chinese_title else paper.title}\n"
+            content += f"#### {i}. {_esc(chinese_title) if chinese_title else esc_title}\n"
             if chinese_title and chinese_title != paper.title:
-                content += f"**{paper.title}**\n\n"
-            
+                content += f"**{esc_title}**\n\n"
+
             content += f"**作者**: {', '.join(author_names)}\n"
-            content += f"**类别**: {', '.join(paper.categories)}\n"
+            content += f"**类别**: {', '.join(_esc(c) for c in paper.categories)}\n"
             content += f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n"
             content += f"**链接**: {paper.entry_id}\n\n"
             content += _format_analysis_audit_comment(analysis_meta)
             content += f"{analysis_body}\n\n"
             content += "---\n\n"
-    
+
     # 了解领域论文
     if secondary_analyses:
         content += "### 📖 了解领域论文（摘要翻译）\n\n"
         for i, (paper, translation) in enumerate(secondary_analyses, 1):
-            author_names = [author.name for author in paper.authors]
+            author_names = [_esc(author.name) for author in paper.authors]
             chinese_title = _extract_translation_title(translation)
+            esc_title = _esc(paper.title)
 
-            content += f"#### {i}. {chinese_title if chinese_title else paper.title}\n"
+            content += f"#### {i}. {_esc(chinese_title) if chinese_title else esc_title}\n"
             if chinese_title:
-                content += f"**{paper.title}**\n\n"
-            
+                content += f"**{esc_title}**\n\n"
+
             content += f"**作者**: {', '.join(author_names)}\n"
-            content += f"**类别**: {', '.join(paper.categories)}\n"
+            content += f"**类别**: {', '.join(_esc(c) for c in paper.categories)}\n"
             content += f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n"
             content += f"**链接**: {paper.entry_id}\n\n"
             content += f"{translation}\n\n"
             content += "---\n\n"
-    
+
     # 不相关论文
     if irrelevant_papers:
         content += "### 📋 不相关论文（基本信息）\n\n"
         for i, (paper, reason, title_translation) in enumerate(irrelevant_papers, 1):
-            author_names = [author.name for author in paper.authors]
+            author_names = [_esc(author.name) for author in paper.authors]
             chinese_title = _extract_translation_title(title_translation)
+            esc_title = _esc(paper.title)
 
-            content += f"#### {i}. {chinese_title if chinese_title else paper.title}\n"
+            content += f"#### {i}. {_esc(chinese_title) if chinese_title else esc_title}\n"
             if chinese_title:
-                content += f"**{paper.title}**\n\n"
-            
+                content += f"**{esc_title}**\n\n"
+
             content += f"**作者**: {', '.join(author_names)}\n"
-            content += f"**类别**: {', '.join(paper.categories)}\n"
+            content += f"**类别**: {', '.join(_esc(c) for c in paper.categories)}\n"
             content += f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n"
             content += f"**链接**: {paper.entry_id}\n\n"
-            content += f"**摘要**: {paper.summary}\n\n"
+            content += f"**摘要**: {_esc(paper.summary)}\n\n"
             content += "---\n\n"
     
     return content
@@ -146,7 +156,6 @@ def send_email(content, attachment_path=None):
         html_content = html_content.replace('#### ', '<h3>')
         
         # 处理加粗文本
-        import re
         html_content = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html_content)
         
         # 处理链接 (如果有的话)
@@ -301,7 +310,7 @@ def send_email(content, attachment_path=None):
         # 安全关闭连接
         try:
             server.quit()
-        except:
+        except Exception:
             server.close()
 
         attachment_info = f" (包含附件: {attachment_path.name})" if attachment_path and attachment_path.exists() else ""

@@ -840,32 +840,51 @@ def check_topic_relevance(paper):
         return 2, f"检查出错, 默认处理: {str(e)}"
 
 
-def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=None, include_prompt_estimate=False):
-    arxiv_id = paper.get_short_id()
-
+def _run_analysis_pipeline(
+    pdf_path,
+    cache_id,
+    display_name,
+    paper=None,
+    title=None,
+    max_pages=10,
+    use_cache=True,
+    thinking_mode=None,
+    include_prompt_estimate=False,
+    source_name="analysis",
+):
     request_state = {
         **ai_client.get_analysis_request_config(thinking_mode=thinking_mode),
         **get_analysis_cleanup_request_config(),
         "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
     }
-    cache_key = build_analysis_cache_key(arxiv_id, request_state)
+    cache_key = build_analysis_cache_key(cache_id, request_state)
     effective_model = request_state.get("effective_model")
 
     if use_cache:
         cached = get_cached_analysis(cache_key)
         if cached is not None:
-            logger.info("[缓存命中] 分析结果: %s", paper.title)
+            logger.info("[缓存命中] 分析结果: %s", display_name)
             return _prepare_cached_analysis(request_state, cached)
 
     try:
-        pdf_content = extract_pdf_text(pdf_path, max_pages=max_pages)
-        structured_messages = _build_structured_analysis_messages(pdf_content, paper=paper)
+        pdf_content = extract_pdf_text(str(pdf_path), max_pages=max_pages)
+
+        fallback_title = title
+        if paper is not None:
+            structured_messages = _build_structured_analysis_messages(pdf_content, paper=paper)
+            fallback_title = paper.title
+        else:
+            if not title:
+                title = Path(pdf_path).stem.replace("_", " ").replace("-", " ")
+                fallback_title = title
+            structured_messages = _build_structured_analysis_messages(pdf_content, title=title)
+
         estimated_prompt_tokens = None
         if include_prompt_estimate:
             estimated_prompt_tokens = _estimate_message_tokens(structured_messages, model_name=effective_model)
         effective_thinking = request_state.get("thinking_applied")
         mode_str = " (深度思考模式)" if effective_thinking else ""
-        logger.info("正在分析论文%s: %s", mode_str, paper.title)
+        logger.info("正在分析%s: %s", mode_str, display_name)
 
         try:
             structured_result, usage, response_state = ai_client.structured_chat_completion_with_usage(
@@ -883,13 +902,16 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=N
             normalized = render_structured_analysis_markdown(analysis_blocks)
         except Exception as structured_error:
             logger.warning("结构化分析失败, 将回退到普通文本模式: %s", str(structured_error))
-            fallback_messages = _build_fallback_analysis_messages(pdf_content, paper=paper)
+            if paper is not None:
+                fallback_messages = _build_fallback_analysis_messages(pdf_content, paper=paper)
+            else:
+                fallback_messages = _build_fallback_analysis_messages(pdf_content, title=title)
             analysis, usage, response_state = ai_client.chat_completion_with_usage(
                 messages=fallback_messages,
                 thinking_mode=False,
                 return_response_state=True,
             )
-            normalized = normalize_analysis_markdown(analysis, extract_analysis_title(analysis, paper.title))
+            normalized = normalize_analysis_markdown(analysis, extract_analysis_title(analysis, fallback_title))
             analysis_meta = _finalize_analysis_meta(
                 {
                     **response_state,
@@ -904,12 +926,13 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=N
                 structured_fallback=True,
                 structured_error=str(structured_error),
             )
-            analysis_blocks = _structured_analysis_from_markdown(normalized, paper.title)
+            analysis_blocks = _structured_analysis_from_markdown(normalized, fallback_title)
 
         cleaned_blocks, cleanup_usage, cleanup_meta = _apply_analysis_cleanup(
             analysis_blocks,
             paper=paper,
-            source_name="arxiv_paper",
+            title=title,
+            source_name=source_name,
         )
         if cleanup_meta.get("cleanup_applied"):
             normalized = render_structured_analysis_markdown(cleaned_blocks)
@@ -920,7 +943,7 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=N
             analysis_meta["pdf_text_length"] = len(pdf_content)
             analysis_meta["pdf_text_pages"] = _count_extracted_pdf_pages(pdf_content)
 
-        logger.info("论文分析完成: %s", paper.title)
+        logger.info("分析完成: %s", display_name)
         logger.info(
             "分析请求配置: provider=%s, model=%s, thinking=%s, fallback=%s, reasoning=%s, structured=%s, cleanup=%s",
             analysis_meta.get("provider"),
@@ -940,12 +963,26 @@ def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=N
             )
 
         if use_cache:
-            final_cache_key = build_analysis_cache_key(arxiv_id, analysis_meta)
+            final_cache_key = build_analysis_cache_key(cache_id, analysis_meta)
             cache_analysis(final_cache_key, normalized, analysis_meta)
         return normalized, usage, analysis_meta
     except Exception as e:
-        logger.error("分析论文失败 %s (%s): %s", paper.title, effective_model, str(e))
-        return f"**论文分析出错**: {str(e)}", {}, {}
+        logger.error("分析失败 %s (%s): %s", display_name, effective_model, str(e))
+        return f"**分析出错**: {str(e)}", {}, {}
+
+
+def analyze_paper(pdf_path, paper, max_pages=10, use_cache=True, thinking_mode=None, include_prompt_estimate=False):
+    return _run_analysis_pipeline(
+        pdf_path,
+        cache_id=paper.get_short_id(),
+        display_name=paper.title,
+        paper=paper,
+        max_pages=max_pages,
+        use_cache=use_cache,
+        thinking_mode=thinking_mode,
+        include_prompt_estimate=include_prompt_estimate,
+        source_name="arxiv_paper",
+    )
 
 
 def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, thinking_mode=None, include_prompt_estimate=False):
@@ -956,110 +993,14 @@ def analyze_pdf_only(pdf_path, max_pages=10, title: str = None, use_cache=True, 
         logger.error("PDF 文件不存在: %s", pdf_path)
         return f"**错误**: PDF 文件不存在: {pdf_path}", {}, {}
 
-    request_state = {
-        **ai_client.get_analysis_request_config(thinking_mode=thinking_mode),
-        **get_analysis_cleanup_request_config(),
-        "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
-    }
-    cache_key = build_analysis_cache_key(pdf_path.stem, request_state)
-    effective_model = request_state.get("effective_model")
-
-    if use_cache:
-        cached = get_cached_analysis(cache_key)
-        if cached is not None:
-            logger.info("[缓存命中] 分析结果: %s", pdf_path.name)
-            return _prepare_cached_analysis(request_state, cached)
-
-    try:
-        pdf_content = extract_pdf_text(str(pdf_path), max_pages=max_pages)
-
-        if not title:
-            title = pdf_path.stem.replace("_", " ").replace("-", " ")
-
-        structured_messages = _build_structured_analysis_messages(pdf_content, title=title)
-        estimated_prompt_tokens = None
-        if include_prompt_estimate:
-            estimated_prompt_tokens = _estimate_message_tokens(structured_messages, model_name=effective_model)
-        effective_thinking = request_state.get("thinking_applied")
-        mode_str = " (深度思考模式)" if effective_thinking else ""
-        logger.info("正在分析 PDF%s: %s", mode_str, pdf_path.name)
-
-        try:
-            structured_result, usage, response_state = ai_client.structured_chat_completion_with_usage(
-                messages=structured_messages,
-                response_model=StructuredPaperAnalysis,
-                thinking_mode=thinking_mode,
-                return_response_state=True,
-            )
-            analysis_meta = _finalize_analysis_meta(
-                {**response_state, **request_state},
-                structured_validated=True,
-                structured_fallback=False,
-            )
-            analysis_blocks = structured_result
-            normalized = render_structured_analysis_markdown(analysis_blocks)
-        except Exception as structured_error:
-            logger.warning("结构化 PDF 分析失败, 将回退到普通文本模式: %s", str(structured_error))
-            fallback_messages = _build_fallback_analysis_messages(pdf_content, title=title)
-            analysis, usage, response_state = ai_client.chat_completion_with_usage(
-                messages=fallback_messages,
-                thinking_mode=False,
-                return_response_state=True,
-            )
-            normalized = normalize_analysis_markdown(analysis, extract_analysis_title(analysis, title))
-            analysis_meta = _finalize_analysis_meta(
-                {
-                    **response_state,
-                    **request_state,
-                    "thinking_requested": False,
-                    "thinking_applied": False,
-                    "thinking_budget": None,
-                    "thinking_effort": None,
-                    "structured_output_mode": "prompt_fallback",
-                },
-                structured_validated=False,
-                structured_fallback=True,
-                structured_error=str(structured_error),
-            )
-            analysis_blocks = _structured_analysis_from_markdown(normalized, title)
-
-        cleaned_blocks, cleanup_usage, cleanup_meta = _apply_analysis_cleanup(
-            analysis_blocks,
-            title=title,
-            source_name=f"local_pdf:{pdf_path.name}",
-        )
-        if cleanup_meta.get("cleanup_applied"):
-            normalized = render_structured_analysis_markdown(cleaned_blocks)
-        usage = _merge_usage(usage, cleanup_usage)
-        analysis_meta.update(cleanup_meta)
-        if include_prompt_estimate:
-            analysis_meta["estimated_prompt_tokens"] = estimated_prompt_tokens
-            analysis_meta["pdf_text_length"] = len(pdf_content)
-            analysis_meta["pdf_text_pages"] = _count_extracted_pdf_pages(pdf_content)
-
-        logger.info("PDF 分析完成: %s", pdf_path.name)
-        logger.info(
-            "分析请求配置: provider=%s, model=%s, thinking=%s, fallback=%s, reasoning=%s, structured=%s, cleanup=%s",
-            analysis_meta.get("provider"),
-            analysis_meta.get("effective_model"),
-            analysis_meta.get("thinking_applied"),
-            analysis_meta.get("fallback_used"),
-            analysis_meta.get("reasoning_content_present"),
-            analysis_meta.get("structured_output_validated"),
-            analysis_meta.get("cleanup_applied"),
-        )
-        if usage:
-            logger.info(
-                "Token用量: 输入=%s, 输出=%s, 总计=%s",
-                usage.get("prompt_tokens", 0),
-                usage.get("completion_tokens", 0),
-                usage.get("total_tokens", 0),
-            )
-
-        if use_cache:
-            final_cache_key = build_analysis_cache_key(pdf_path.stem, analysis_meta)
-            cache_analysis(final_cache_key, normalized, analysis_meta)
-        return normalized, usage, analysis_meta
-    except Exception as e:
-        logger.error("分析 PDF 失败 %s (%s): %s", pdf_path, effective_model, str(e))
-        return f"**PDF 分析出错**: {str(e)}", {}, {}
+    return _run_analysis_pipeline(
+        pdf_path,
+        cache_id=pdf_path.stem,
+        display_name=pdf_path.name,
+        title=title,
+        max_pages=max_pages,
+        use_cache=use_cache,
+        thinking_mode=thinking_mode,
+        include_prompt_estimate=include_prompt_estimate,
+        source_name=f"local_pdf:{pdf_path.name}",
+    )

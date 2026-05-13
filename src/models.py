@@ -1,7 +1,6 @@
 # models.py - 数据模型
 
 import datetime
-import pytz
 import requests
 
 class SimpleAuthor:
@@ -12,7 +11,7 @@ class SimplePaper:
     def __init__(self, entry):
         self.title = entry.title
         self.authors = [SimpleAuthor(author.name) for author in entry.authors]
-        self.published = datetime.datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=pytz.UTC)
+        self.published = datetime.datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
         self.categories = [tag.term for tag in entry.tags]
         self.entry_id = entry.id
         self.summary = entry.summary
