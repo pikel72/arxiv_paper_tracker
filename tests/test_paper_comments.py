@@ -59,7 +59,40 @@ def test_write_to_conclusion_includes_comment():
     assert "**Comment**: 12 pages, comments welcome" in content
 
 
+def test_write_to_conclusion_hides_analysis_audit_in_comment():
+    paper = models.SimplePaper(_build_entry())
+    analysis = """### 详细分析
+
+测试标题
+
+## 详细分析
+
+### 1. 研究对象和背景
+背景内容
+"""
+    analysis_meta = {
+        "provider": "qwen",
+        "effective_model": "qwen-plus",
+        "thinking_applied": True,
+        "structured_output_validated": False,
+        "structured_error": "timeout",
+    }
+
+    with TemporaryDirectory() as tmpdir:
+        with patch.object(utils, "RESULTS_DIR", Path(tmpdir)), patch(
+            "translator.translate_abstract_with_deepseek", return_value="**中文标题**: 测试标题"
+        ):
+            output_file = utils.write_to_conclusion([(paper, analysis, analysis_meta)], [], filename="daily.md")
+
+        content = output_file.read_text(encoding="utf-8")
+
+    assert "**分析审计**" not in content
+    assert "<!-- analysis_audit" in content
+    assert "structured_error: timeout" in content
+
+
 if __name__ == "__main__":
     test_simple_paper_preserves_arxiv_comment()
     test_write_to_conclusion_includes_comment()
+    test_write_to_conclusion_hides_analysis_audit_in_comment()
     print("paper comments tests passed")

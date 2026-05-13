@@ -25,17 +25,18 @@ def _split_priority_entry(entry):
     return entry[0], entry[1], {}
 
 
-def _format_analysis_audit_line(analysis_meta):
+def _format_analysis_audit_comment(analysis_meta):
     if not analysis_meta:
         return ""
-    return (
-        f"**分析审计**: provider={analysis_meta.get('provider', 'unknown')}, "
-        f"model={analysis_meta.get('effective_model', 'unknown')}, "
-        f"thinking={bool(analysis_meta.get('thinking_applied'))}, "
-        f"fallback={bool(analysis_meta.get('fallback_used'))}, "
-        f"reasoning_content={bool(analysis_meta.get('reasoning_content_present'))}, "
-        f"structured={bool(analysis_meta.get('structured_output_validated'))}\n\n"
-    )
+    lines = [
+        f"provider: {analysis_meta.get('provider', 'unknown')}",
+        f"model: {analysis_meta.get('effective_model', 'unknown')}",
+        f"thinking_applied: {bool(analysis_meta.get('thinking_applied'))}",
+        f"fallback_used: {bool(analysis_meta.get('fallback_used'))}",
+        f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}",
+        f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}",
+    ]
+    return "<!-- analysis_audit\n" + "\n".join(lines) + "\n-->\n\n"
 
 def format_email_content(priority_analyses, secondary_analyses, irrelevant_papers=None, run_meta=None):
     """格式化邮件内容，包含三种类型的论文"""
@@ -76,7 +77,7 @@ def format_email_content(priority_analyses, secondary_analyses, irrelevant_paper
             content += f"**类别**: {', '.join(paper.categories)}\n"
             content += f"**发布日期**: {paper.published.strftime('%Y-%m-%d')}\n"
             content += f"**链接**: {paper.entry_id}\n\n"
-            content += _format_analysis_audit_line(analysis_meta)
+            content += _format_analysis_audit_comment(analysis_meta)
             content += f"{analysis_body}\n\n"
             content += "---\n\n"
     

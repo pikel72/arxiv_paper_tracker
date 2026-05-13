@@ -54,53 +54,78 @@ def _split_priority_entry(entry):
     return entry[0], entry[1], {}
 
 
-def _write_analysis_metadata_block(f, analysis_meta, ai_model):
+def _analysis_metadata_lines(analysis_meta, ai_model):
     if not analysis_meta:
-        return
+        return []
+    lines = []
     if analysis_meta.get("provider"):
-        f.write(f"ai_provider: {analysis_meta.get('provider')}\n")
+        lines.append(f"ai_provider: {analysis_meta.get('provider')}")
     if analysis_meta.get("effective_model"):
-        f.write(f"effective_model: {analysis_meta.get('effective_model')}\n")
+        lines.append(f"effective_model: {analysis_meta.get('effective_model')}")
     else:
-        f.write(f"effective_model: {ai_model}\n")
-    f.write(f"thinking_applied: {bool(analysis_meta.get('thinking_applied'))}\n")
-    f.write(f"fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
-    f.write(f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
-    f.write(f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
-    f.write(f"structured_output_fallback: {bool(analysis_meta.get('structured_output_fallback'))}\n")
-    f.write(f"cleanup_requested: {bool(analysis_meta.get('cleanup_requested'))}\n")
-    f.write(f"cleanup_attempted: {bool(analysis_meta.get('cleanup_attempted'))}\n")
-    f.write(f"cleanup_applied: {bool(analysis_meta.get('cleanup_applied'))}\n")
+        lines.append(f"effective_model: {ai_model}")
+    lines.append(f"thinking_applied: {bool(analysis_meta.get('thinking_applied'))}")
+    lines.append(f"fallback_used: {bool(analysis_meta.get('fallback_used'))}")
+    lines.append(f"reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}")
+    lines.append(f"structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}")
+    lines.append(f"structured_output_fallback: {bool(analysis_meta.get('structured_output_fallback'))}")
+    lines.append(f"cleanup_requested: {bool(analysis_meta.get('cleanup_requested'))}")
+    lines.append(f"cleanup_attempted: {bool(analysis_meta.get('cleanup_attempted'))}")
+    lines.append(f"cleanup_applied: {bool(analysis_meta.get('cleanup_applied'))}")
     if analysis_meta.get("cleanup_provider"):
-        f.write(f"cleanup_provider: {analysis_meta.get('cleanup_provider')}\n")
+        lines.append(f"cleanup_provider: {analysis_meta.get('cleanup_provider')}")
     if analysis_meta.get("cleanup_effective_model"):
-        f.write(f"cleanup_effective_model: {analysis_meta.get('cleanup_effective_model')}\n")
-    f.write(f"cleanup_thinking_applied: {bool(analysis_meta.get('cleanup_thinking_applied'))}\n")
-    f.write(f"cleanup_fallback_used: {bool(analysis_meta.get('cleanup_fallback_used'))}\n")
-    f.write(f"cleanup_reasoning_content_present: {bool(analysis_meta.get('cleanup_reasoning_content_present'))}\n")
-    f.write(f"cleanup_structured_validated: {bool(analysis_meta.get('cleanup_structured_validated'))}\n")
+        lines.append(f"cleanup_effective_model: {analysis_meta.get('cleanup_effective_model')}")
+    lines.append(f"cleanup_thinking_applied: {bool(analysis_meta.get('cleanup_thinking_applied'))}")
+    lines.append(f"cleanup_fallback_used: {bool(analysis_meta.get('cleanup_fallback_used'))}")
+    lines.append(f"cleanup_reasoning_content_present: {bool(analysis_meta.get('cleanup_reasoning_content_present'))}")
+    lines.append(f"cleanup_structured_validated: {bool(analysis_meta.get('cleanup_structured_validated'))}")
     if analysis_meta.get("cleanup_validation_error"):
-        f.write(f"cleanup_validation_error: |\n")
+        lines.append("cleanup_validation_error: |")
         for line in str(analysis_meta.get("cleanup_validation_error")).splitlines():
-            f.write(f"  {line}\n")
-    f.write(f"from_cache: {bool(analysis_meta.get('from_cache'))}\n")
+            lines.append(f"  {line}")
+    lines.append(f"from_cache: {bool(analysis_meta.get('from_cache'))}")
     if analysis_meta.get("estimated_prompt_tokens") is not None:
-        f.write(f"estimated_prompt_tokens: {analysis_meta.get('estimated_prompt_tokens')}\n")
+        lines.append(f"estimated_prompt_tokens: {analysis_meta.get('estimated_prompt_tokens')}")
     if analysis_meta.get("pdf_text_length") is not None:
-        f.write(f"pdf_text_length: {analysis_meta.get('pdf_text_length')}\n")
+        lines.append(f"pdf_text_length: {analysis_meta.get('pdf_text_length')}")
     if analysis_meta.get("pdf_text_pages") is not None:
-        f.write(f"pdf_text_pages: {analysis_meta.get('pdf_text_pages')}\n")
+        lines.append(f"pdf_text_pages: {analysis_meta.get('pdf_text_pages')}")
+    if analysis_meta.get("structured_error"):
+        error_text = str(analysis_meta.get("structured_error")).replace("\n", " ").strip()
+        lines.append(f"structured_error: {error_text[:500]}")
+    return lines
 
 
-def _write_usage_block(f, usage):
+def _usage_lines(usage):
     if not usage:
-        return
-    f.write("token_usage:\n")
-    f.write(f"  prompt_tokens: {usage.get('prompt_tokens', 0)}\n")
-    f.write(f"  completion_tokens: {usage.get('completion_tokens', 0)}\n")
-    f.write(f"  total_tokens: {usage.get('total_tokens', 0)}\n")
+        return []
+    lines = ["token_usage:"]
+    lines.append(f"  prompt_tokens: {usage.get('prompt_tokens', 0)}")
+    lines.append(f"  completion_tokens: {usage.get('completion_tokens', 0)}")
+    lines.append(f"  total_tokens: {usage.get('total_tokens', 0)}")
     if "reasoning_tokens" in usage:
-        f.write(f"  reasoning_tokens: {usage.get('reasoning_tokens', 0)}\n")
+        lines.append(f"  reasoning_tokens: {usage.get('reasoning_tokens', 0)}")
+    return lines
+
+
+def _write_comment_block(f, label, lines):
+    if not lines:
+        return
+    f.write(f"<!-- {label}\n")
+    for line in lines:
+        f.write(f"{line}\n")
+    f.write("-->\n\n")
+
+
+def _write_analysis_audit_comment(f, analysis_meta, ai_model, usage=None):
+    lines = _analysis_metadata_lines(analysis_meta, ai_model)
+    usage_block = _usage_lines(usage or {})
+    if usage_block:
+        if lines:
+            lines.append("")
+        lines.extend(usage_block)
+    _write_comment_block(f, "analysis_audit", lines)
 
 
 def write_single_analysis(
@@ -141,9 +166,8 @@ def write_single_analysis(
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"arxiv_id: {paper.get_short_id()}\n")
         f.write(f"thinking_mode: {resolved_thinking_mode}\n")
-        _write_analysis_metadata_block(f, analysis_meta or {}, AI_MODEL)
-        _write_usage_block(f, usage or {})
         f.write("---\n")
+        _write_analysis_audit_comment(f, analysis_meta or {}, AI_MODEL, usage or {})
         f.write(f"# {chinese_title if chinese_title else title}\n")
         if chinese_title != title:
             f.write(f"{title}\n\n")
@@ -193,9 +217,8 @@ def write_pdf_analysis(
         f.write(f"pdf_file: {pdf_path.name}\n")
         f.write(f"ai_model: {AI_MODEL}\n")
         f.write(f"thinking_mode: {resolved_thinking_mode}\n")
-        _write_analysis_metadata_block(f, analysis_meta or {}, AI_MODEL)
-        _write_usage_block(f, usage or {})
         f.write("---\n\n")
+        _write_analysis_audit_comment(f, analysis_meta or {}, AI_MODEL, usage or {})
         f.write(f"# {chinese_title}\n\n")
         f.write(f"{analysis_body}\n")
 
@@ -281,27 +304,7 @@ def write_to_conclusion(priority_analyses, secondary_analyses, irrelevant_papers
                     f.write(f"**摘要**: {paper.summary}\n\n")
                 f.write(f"**Comment**: {paper_comment if paper_comment else '无'}\n\n")
                 f.write(f"**链接**: {paper.entry_id}\n\n")
-                if analysis_meta:
-                    f.write("**分析审计**\n\n")
-                    f.write(f"- provider: {analysis_meta.get('provider', 'unknown')}\n")
-                    f.write(f"- model: {analysis_meta.get('effective_model', AI_MODEL)}\n")
-                    f.write(f"- thinking_applied: {bool(analysis_meta.get('thinking_applied'))}\n")
-                    f.write(f"- fallback_used: {bool(analysis_meta.get('fallback_used'))}\n")
-                    f.write(f"- reasoning_content_present: {bool(analysis_meta.get('reasoning_content_present'))}\n")
-                    f.write(f"- structured_output_validated: {bool(analysis_meta.get('structured_output_validated'))}\n")
-                    f.write(f"- structured_output_fallback: {bool(analysis_meta.get('structured_output_fallback'))}\n")
-                    f.write(f"- cleanup_applied: {bool(analysis_meta.get('cleanup_applied'))}\n")
-                    f.write(f"- cleanup_structured_validated: {bool(analysis_meta.get('cleanup_structured_validated'))}\n")
-                    if analysis_meta.get("estimated_prompt_tokens") is not None:
-                        f.write(f"- estimated_prompt_tokens: {analysis_meta.get('estimated_prompt_tokens')}\n")
-                    if analysis_meta.get("pdf_text_pages") is not None:
-                        f.write(f"- pdf_text_pages: {analysis_meta.get('pdf_text_pages')}\n")
-                    if analysis_meta.get("pdf_text_length") is not None:
-                        f.write(f"- pdf_text_length: {analysis_meta.get('pdf_text_length')}\n")
-                    if analysis_meta.get("structured_error"):
-                        error_text = str(analysis_meta.get("structured_error")).replace("\n", " ").strip()
-                        f.write(f"- structured_error: {error_text[:500]}\n")
-                    f.write("\n")
+                _write_analysis_audit_comment(f, analysis_meta, AI_MODEL)
                 f.write(f"{analysis_body}\n\n")
                 f.write("---\n\n")
 

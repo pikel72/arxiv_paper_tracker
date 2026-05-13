@@ -223,7 +223,7 @@ def test_analyze_paper_skips_prompt_budget_estimate_by_default():
     assert analysis_meta["pdf_text_pages"] is None
 
 
-def test_write_single_analysis_includes_prompt_estimate_metadata():
+def test_write_single_analysis_writes_prompt_estimate_as_comment():
     paper = DummyPaper()
     analysis = """# 测试标题
 
@@ -269,6 +269,10 @@ def test_write_single_analysis_includes_prompt_estimate_metadata():
 
         content = output_file.read_text(encoding="utf-8")
 
+    assert "<!-- analysis_audit" in content
     assert "estimated_prompt_tokens: 1234" in content
     assert "pdf_text_length: 5678" in content
     assert "pdf_text_pages: 10" in content
+    front_matter = content.split("---", 2)[1]
+    assert "estimated_prompt_tokens" not in front_matter
+    assert "structured_output_validated" not in front_matter
