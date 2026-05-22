@@ -96,6 +96,10 @@ def parse_date_arg(date_str: str) -> Tuple[datetime.datetime, datetime.datetime]
     return start_time, end_time
 
 
+def _format_arxiv_datetime(dt: datetime.datetime) -> str:
+    return dt.astimezone(datetime.timezone.utc).strftime('%Y%m%d%H%M')
+
+
 def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[str] = None):
     """
     获取最近几天内发布或更新的指定类别的论文（基于最后更新日期）
@@ -152,10 +156,10 @@ def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[
     # arXiv API URL - 按最后更新日期排序（包括新发布和更新的论文）
     category_query = " OR ".join([f"cat:{cat}" for cat in categories])
     # 添加时间范围参数，确保返回足够论文
-    start_date = start_time.strftime('%Y%m%d')
-    end_date = end_time.strftime('%Y%m%d')
-        # 使用submittedDate参数，格式为YYYYMMDD
-    url = f"https://export.arxiv.org/api/query?search_query=({category_query}) AND submittedDate:[{start_date} TO {end_date}]&sortBy=lastUpdatedDate&max_results={max_results}"
+    start_date = _format_arxiv_datetime(start_time)
+    end_date = _format_arxiv_datetime(end_time)
+        # 使用submittedDate参数，格式为YYYYMMDDHHMM
+    url = f"https://export.arxiv.org/api/query?search_query=({category_query}) AND submittedDate:[{start_date} TO {end_date}]&sortBy=submittedDate&max_results={max_results}"
 
     logger.info(f"API请求URL: {url}")
     logger.info(f"最大论文数: {max_results}")
@@ -171,7 +175,9 @@ def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[
 
     papers = []
     for entry in feed.entries:
-        papers.append(SimplePaper(entry))
+        submit_date = datetime.datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        if start_time <= submit_date < end_time:
+            papers.append(SimplePaper(entry))
 
     logger.info(f"找到{len(papers)}篇符合条件的论文")
     return papers
