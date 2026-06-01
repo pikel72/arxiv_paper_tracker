@@ -27,22 +27,36 @@ def _get_optional_int(name):
         return None
 
 
+_BOOL_TRUE = {"1", "true", "yes", "on"}
+_BOOL_FALSE = {"0", "false", "no", "off"}
+_BOOL_ALL = _BOOL_TRUE | _BOOL_FALSE
+
+
+def _parse_bool_env(name, raw_value):
+    normalized = str(raw_value).strip().lower()
+    if normalized in _BOOL_TRUE:
+        return True
+    if normalized in _BOOL_FALSE:
+        return False
+    logger.warning("环境变量 %s 的值 '%s' 不是有效布尔值 (支持: %s)，将使用默认值", name, raw_value, "/".join(sorted(_BOOL_ALL)))
+    return None
+
+
 def _get_bool_env(name, default="off"):
-    value = os.getenv(name, default)
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+    value = os.getenv(name)
+    if value in (None, ""):
+        return _parse_bool_env(name, default) or False
+    result = _parse_bool_env(name, value)
+    if result is None:
+        return _parse_bool_env(name, default) or False
+    return result
 
 
 def _get_optional_bool_env(name):
     value = os.getenv(name)
     if value in (None, ""):
         return None
-    normalized = str(value).strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    logger.warning("环境变量 %s 不是有效布尔值，将忽略: %s", name, value)
-    return None
+    return _parse_bool_env(name, value)
 
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
