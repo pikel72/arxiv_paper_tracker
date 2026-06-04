@@ -58,19 +58,40 @@ def _fetch_arxiv_response(url: str, max_retries: int = 4, timeout: int = 30):
     return None
 
 
+def _search_window_for_date(date: datetime.datetime) -> Tuple[datetime.datetime, datetime.datetime]:
+    """
+    给定一个公告日期，返回对应的 submittedDate 搜索窗口（UTC）。
+
+    arXiv 节奏：工作日 18:00 UTC 截止提交 → 下一个工作日公告。
+    周末提交 → 周一公告（和上周五一起）。
+
+    - 周一公告 = 只有周五提交的 → 搜索 [D-3 18:00, D-2 18:00]
+    - 周二公告 = 周六+周日+周一提交的 → 搜索 [D-3 18:00, D-1 18:00]
+    - 周三~周五公告 = 前一天提交的 → 搜索 [D-2 18:00, D-1 18:00]
+    """
+    tz = datetime.timezone.utc
+    base = date.replace(hour=18, minute=0, second=0, microsecond=0, tzinfo=tz)
+    weekday = date.weekday()
+
+    if weekday == 0:  # 周一：只有周五的论文
+        return base - datetime.timedelta(days=3), base - datetime.timedelta(days=2)
+    elif weekday == 1:  # 周二：周六+周日+周一的论文
+        return base - datetime.timedelta(days=3), base - datetime.timedelta(days=1)
+    else:  # 周三~周五：前一天的论文
+        return base - datetime.timedelta(days=2), base - datetime.timedelta(days=1)
+
+
 def parse_date_arg(date_str: str) -> Tuple[datetime.datetime, datetime.datetime]:
     """
     解析日期参数，支持单日期和日期范围
-    
+
     格式:
         - 单日期: "20251225" 或 "2025-12-25"
         - 日期范围: "20251220:20251225" 或 "2025-12-20:2025-12-25"
-    
+
     Returns:
-        (start_time, end_time) UTC 时间元组
+        (start_time, end_time) UTC 时间元组，对应 submittedDate 搜索窗口
     """
-    tz = datetime.timezone.utc
-    
     def parse_single_date(s: str) -> datetime.datetime:
         """解析单个日期，支持 YYYYMMDD 和 YYYY-MM-DD 格式"""
         s = s.strip()
@@ -78,22 +99,19 @@ def parse_date_arg(date_str: str) -> Tuple[datetime.datetime, datetime.datetime]
             return datetime.datetime.strptime(s, '%Y-%m-%d')
         else:
             return datetime.datetime.strptime(s, '%Y%m%d')
-    
+
     if ':' in date_str:
-        # 日期范围
         start_str, end_str = date_str.split(':', 1)
         start_date = parse_single_date(start_str)
         end_date = parse_single_date(end_str)
     else:
-        # 单日期
         start_date = parse_single_date(date_str)
         end_date = start_date
-    
-    # arXiv 论文发布时间是 UTC 18:00，所以我们用前一天18:00到当天18:00
-    start_time = start_date.replace(hour=18, minute=0, second=0, microsecond=0, tzinfo=tz) - datetime.timedelta(days=1)
-    end_time = end_date.replace(hour=18, minute=0, second=0, microsecond=0, tzinfo=tz)
-    
-    return start_time, end_time
+
+    search_start, _ = _search_window_for_date(start_date)
+    _, search_end = _search_window_for_date(end_date)
+
+    return search_start, search_end
 
 
 def _format_arxiv_datetime(dt: datetime.datetime) -> str:
@@ -124,20 +142,14 @@ def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[
         # 原有的按星期自动计算逻辑
         weekday = today.weekday()  # 0=周一, 1=周二, ..., 6=周日
 
-        # 按星期逻辑确定检索区间
-        if weekday == 0:  # 周一：检索上周四18:00 ~ 上周五18:00（UTC）
-            start_time = (today - datetime.timedelta(days=4)).replace(hour=18, minute=0, second=0, microsecond=0)
-            end_time = (today - datetime.timedelta(days=3)).replace(hour=18, minute=0, second=0, microsecond=0)
-        elif weekday == 1:  # 周二：检索上周五18:00 ~ 本周一18:00（UTC）
-            start_time = (today - datetime.timedelta(days=4)).replace(hour=18, minute=0, second=0, microsecond=0)
+        # 按星期逻辑确定检索区间（arXiv: 工作日18:00 UTC截止→次日公告，周末→周一公告）
+        if weekday == 0:  # 周一公告 = 只有周五提交的论文
+            start_time = (today - datetime.timedelta(days=5)).replace(hour=18, minute=0, second=0, microsecond=0)
+            end_time = (today - datetime.timedelta(days=4)).replace(hour=18, minute=0, second=0, microsecond=0)
+        elif weekday == 1:  # 周二公告 = 周六+周日+周一提交的论文
+            start_time = (today - datetime.timedelta(days=3)).replace(hour=18, minute=0, second=0, microsecond=0)
             end_time = (today - datetime.timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
-        elif weekday == 2:  # 周三：检索本周一18:00 ~ 本周二18:00（UTC）
-            start_time = (today - datetime.timedelta(days=2)).replace(hour=18, minute=0, second=0, microsecond=0)
-            end_time = (today - datetime.timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
-        elif weekday == 3:  # 周四：检索本周二18:00 ~ 本周三18:00（UTC）
-            start_time = (today - datetime.timedelta(days=2)).replace(hour=18, minute=0, second=0, microsecond=0)
-            end_time = (today - datetime.timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
-        elif weekday == 4:  # 周五：检索本周三18:00 ~ 本周四18:00（UTC）
+        elif weekday in (2, 3, 4):  # 周三~周五公告 = 前一天提交的论文
             start_time = (today - datetime.timedelta(days=2)).replace(hour=18, minute=0, second=0, microsecond=0)
             end_time = (today - datetime.timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
         elif weekday == 5 or weekday == 6:  # 周六、周日：跳过检索
