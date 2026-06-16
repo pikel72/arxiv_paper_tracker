@@ -97,6 +97,12 @@ def process_single_paper_task(paper, index, total, thinking_mode=None):
 def record_paper_result(result, priority_analyses, secondary_analyses, irrelevant_papers):
     p_type, data = result
     if p_type == 1:
+        # analyze_paper 内部 try-except 兜底时返回 "**分析出错**: ..." 占位字符串
+        # 这种应当计为失败, 不算 completed
+        paper, analysis, pdf_path, analysis_meta = data
+        if isinstance(analysis, str) and analysis.startswith("**分析出错**:"):
+            logger.warning(f"重点论文分析兜底为错误占位, 不计入完成: {paper.title}")
+            return False
         priority_analyses.append(data)
         return True
     elif p_type == 2:
