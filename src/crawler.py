@@ -175,7 +175,12 @@ def get_recent_papers(categories, max_results=MAX_PAPERS, target_date: Optional[
 
     papers = []
     for entry in feed.entries:
-        submit_date = datetime.datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        try:
+            submit_date = datetime.datetime.strptime(entry.published, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        except (ValueError, TypeError) as e:
+            # arXiv 偶尔返回非标格式 (缺 Z 后缀或含多余小数秒), 跳过单条而不中断整次 crawl
+            logger.warning(f"跳过日期格式异常的论文 {entry.get('id', '?')}: published={entry.published!r}, 错误: {e}")
+            continue
         if start_time <= submit_date < end_time:
             papers.append(SimplePaper(entry))
 
