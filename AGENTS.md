@@ -146,7 +146,7 @@ run_tracker.bat  # 交互式菜单
 4. **缓存优先**：analyzer 和 translator 在调用 AI 前先检查缓存
 5. **多线程**：main.py 使用 `ThreadPoolExecutor(max_workers=MAX_THREADS)`
 
-**重要**：项目要求 **不要添加代码注释**，保持代码简洁。
+**重要**：项目要求 **保留所有代码注释**（行内 `#`、函数 docstring、文件头、章节标题等）。这些注释由用户亲手编写, 承载项目知识; 在重构、清理、simplify、refactor 时**绝对不要删除**。新增代码时也应配注释, 解释 *why* 而不是 *what*。
 
 ## Commit Message 格式
 
