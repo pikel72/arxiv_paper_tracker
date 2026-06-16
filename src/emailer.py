@@ -324,8 +324,8 @@ def send_email(content, attachment_path=None):
         if "b'\\x00\\x00\\x00\\x00'" in error_str or "(-1," in error_str:
             logger.warning("邮件可能已发送成功，但服务器响应异常。请检查收件箱。")
             return True
-        
+
         # 提供更详细的错误信息
-        import traceback
-        logger.error(f"详细错误信息: {traceback.format_exc()}")
+        # 只记异常类型和消息, 不打印完整 traceback 是为了避免 SMTP 凭据等敏感信息落盘
+        logger.error(f"详细错误信息 (类型={type(e).__name__}): {str(e)}")
         return False
