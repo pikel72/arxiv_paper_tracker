@@ -54,8 +54,11 @@ results/
 papers/
 
 # Other common exclusions
-.cache/
 *.log
 *.pyc
+
+# Tooling-produced temporary directories
+.tmp_*/
+pytest-cache-files-*/
 
 # Keep project-specific overrides in `.git/info/exclude` if needed
