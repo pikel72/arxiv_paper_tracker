@@ -5,7 +5,7 @@ import json
 import hashlib
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -45,8 +45,11 @@ def _is_cache_valid(cache_data: dict, cache_type: str) -> bool:
         return False
     
     cached_time = datetime.fromisoformat(cache_data["timestamp"])
+    # 兼容旧缓存 (无时区信息) — 视为 UTC, 旧缓存会因此多几分钟到几小时有效期
+    if cached_time.tzinfo is None:
+        cached_time = cached_time.replace(tzinfo=timezone.utc)
     expiry_hours = CACHE_EXPIRY_HOURS.get(cache_type, 24)
-    return datetime.now() - cached_time < timedelta(hours=expiry_hours)
+    return datetime.now(timezone.utc) - cached_time < timedelta(hours=expiry_hours)
 
 
 def get_cache(cache_type: str, key: str) -> Optional[Any]:
@@ -97,7 +100,7 @@ def set_cache(cache_type: str, key: str, data: Any) -> bool:
     
     try:
         cache_data = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "cache_type": cache_type,
             "key": key,
             "data": data
