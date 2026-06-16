@@ -27,8 +27,8 @@ from config import (
     ANALYSIS_CLEANUP_THINKING_MODE,
     PRIORITY_TOPICS,
     SECONDARY_TOPICS,
-    ai_client,
-    analysis_cleanup_client,
+    get_ai_client,
+    get_analysis_cleanup_client,
     get_analysis_cleanup_request_config,
 )
 
@@ -414,7 +414,7 @@ def _apply_analysis_cleanup(analysis_blocks: StructuredPaperAnalysis, paper=None
     cleanup_meta["cleanup_applied"] = False
     cleanup_meta["cleanup_structured_validated"] = False
     cleanup_meta["cleanup_validation_error"] = ""
-    if not cleanup_request.get("cleanup_requested") or analysis_cleanup_client is None:
+    if not cleanup_request.get("cleanup_requested") or get_analysis_cleanup_client() is None:
         return analysis_blocks, {}, cleanup_meta
 
     cleanup_meta["cleanup_attempted"] = True
@@ -424,7 +424,7 @@ def _apply_analysis_cleanup(analysis_blocks: StructuredPaperAnalysis, paper=None
 
     for attempt in range(1, CLEANUP_MAX_ATTEMPTS + 1):
         try:
-            cleaned_blocks, cleanup_usage, cleanup_state = analysis_cleanup_client.structured_chat_completion_with_usage(
+            cleaned_blocks, cleanup_usage, cleanup_state = get_analysis_cleanup_client().structured_chat_completion_with_usage(
                 messages=_build_analysis_cleanup_messages(
                     current_blocks,
                     paper=paper,
@@ -806,7 +806,7 @@ def check_topic_relevance(paper):
 
         logger.info("正在检查主题相关性: %s", paper.title)
         try:
-            structured, _ = ai_client.structured_chat_completion_with_usage(
+            structured, _ = get_ai_client().structured_chat_completion_with_usage(
                 messages=_build_classification_messages(paper, abstract),
                 response_model=StructuredTopicClassification,
                 json_schema_prompt=True,
@@ -816,7 +816,7 @@ def check_topic_relevance(paper):
             logger.info("主题相关性检查结果(结构化): priority=%s, reason=%s", priority, reason)
         except Exception as structured_error:
             logger.warning("结构化分类失败, 将回退到普通文本模式: %s", str(structured_error))
-            result = ai_client.chat_completion(
+            result = get_ai_client().chat_completion(
                 messages=[
                     {"role": "system", "content": "你是一位偏微分方程与分析理论方向的学术论文分类专家. 请严格按照要求的格式回答. "},
                     {"role": "user", "content": _build_classification_fallback_prompt(paper, abstract)},
@@ -853,7 +853,7 @@ def _run_analysis_pipeline(
     source_name="analysis",
 ):
     request_state = {
-        **ai_client.get_analysis_request_config(thinking_mode=thinking_mode),
+        **get_ai_client().get_analysis_request_config(thinking_mode=thinking_mode),
         **get_analysis_cleanup_request_config(),
         "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
     }
@@ -887,7 +887,7 @@ def _run_analysis_pipeline(
         logger.info("正在分析%s: %s", mode_str, display_name)
 
         try:
-            structured_result, usage, response_state = ai_client.structured_chat_completion_with_usage(
+            structured_result, usage, response_state = get_ai_client().structured_chat_completion_with_usage(
                 messages=structured_messages,
                 response_model=StructuredPaperAnalysis,
                 thinking_mode=thinking_mode,
@@ -906,7 +906,7 @@ def _run_analysis_pipeline(
                 fallback_messages = _build_fallback_analysis_messages(pdf_content, paper=paper)
             else:
                 fallback_messages = _build_fallback_analysis_messages(pdf_content, title=title)
-            analysis, usage, response_state = ai_client.chat_completion_with_usage(
+            analysis, usage, response_state = get_ai_client().chat_completion_with_usage(
                 messages=fallback_messages,
                 thinking_mode=False,
                 return_response_state=True,

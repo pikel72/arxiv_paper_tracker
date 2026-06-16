@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -156,19 +156,19 @@ def test_analyze_paper_records_prompt_budget_estimate():
         return result[:2]
 
     with patch.object(analyzer, "extract_pdf_text", return_value=pdf_text), patch.object(
-        analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
-    ), patch.object(
         analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_disabled_request
-    ), patch.object(
-        analyzer.ai_client, "structured_chat_completion_with_usage", side_effect=fake_structured_completion
     ):
-        _, _, analysis_meta = analyzer.analyze_paper(
-            "paper.pdf",
-            paper,
-            use_cache=False,
-            thinking_mode=False,
-            include_prompt_estimate=True,
-        )
+        mock_client = MagicMock()
+        mock_client.get_analysis_request_config.side_effect = fake_get_request_config
+        mock_client.structured_chat_completion_with_usage.side_effect = fake_structured_completion
+        with patch.object(analyzer, "get_ai_client", return_value=mock_client):
+            _, _, analysis_meta = analyzer.analyze_paper(
+                "paper.pdf",
+                paper,
+                use_cache=False,
+                thinking_mode=False,
+                include_prompt_estimate=True,
+            )
 
     assert analysis_meta["estimated_prompt_tokens"] > 0
     assert analysis_meta["pdf_text_length"] == len(pdf_text)
@@ -210,13 +210,13 @@ def test_analyze_paper_skips_prompt_budget_estimate_by_default():
         return result[:2]
 
     with patch.object(analyzer, "extract_pdf_text", return_value="pdf text"), patch.object(
-        analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
-    ), patch.object(
         analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_disabled_request
-    ), patch.object(
-        analyzer.ai_client, "structured_chat_completion_with_usage", side_effect=fake_structured_completion
     ):
-        _, _, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=False)
+        mock_client = MagicMock()
+        mock_client.get_analysis_request_config.side_effect = fake_get_request_config
+        mock_client.structured_chat_completion_with_usage.side_effect = fake_structured_completion
+        with patch.object(analyzer, "get_ai_client", return_value=mock_client):
+            _, _, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=False)
 
     assert analysis_meta["estimated_prompt_tokens"] is None
     assert analysis_meta["pdf_text_length"] is None

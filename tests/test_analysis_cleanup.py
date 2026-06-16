@@ -3,7 +3,7 @@
 import datetime
 import os
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -185,13 +185,15 @@ def test_analyze_paper_applies_cleanup_blocks_and_aggregates_usage():
         return result[:2]
 
     with patch.object(analyzer, "extract_pdf_text", return_value="pdf text"), patch.object(
-        analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
-    ), patch.object(
         analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_enabled_request
-    ), patch.object(
-        analyzer.ai_client, "structured_chat_completion_with_usage", side_effect=fake_structured_completion
-    ), patch.object(analyzer, "analysis_cleanup_client", cleanup_client):
-        analysis, usage, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=False)
+    ):
+        mock_client = MagicMock()
+        mock_client.get_analysis_request_config.side_effect = fake_get_request_config
+        mock_client.structured_chat_completion_with_usage.side_effect = fake_structured_completion
+        with patch.object(analyzer, "get_ai_client", return_value=mock_client), patch.object(
+            analyzer, "get_analysis_cleanup_client", return_value=cleanup_client
+        ):
+            analysis, usage, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=False)
 
     assert analysis.startswith("# 清洗后标题")
     assert "清洗后背景" in analysis
@@ -259,13 +261,15 @@ def test_analyze_paper_retries_cleanup_when_output_fails_validation():
         return result[:2]
 
     with patch.object(analyzer, "extract_pdf_text", return_value="pdf text"), patch.object(
-        analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
-    ), patch.object(
         analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_enabled_request
-    ), patch.object(
-        analyzer.ai_client, "structured_chat_completion_with_usage", side_effect=fake_structured_completion
-    ), patch.object(analyzer, "analysis_cleanup_client", cleanup_client):
-        analysis, usage, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=False)
+    ):
+        mock_client = MagicMock()
+        mock_client.get_analysis_request_config.side_effect = fake_get_request_config
+        mock_client.structured_chat_completion_with_usage.side_effect = fake_structured_completion
+        with patch.object(analyzer, "get_ai_client", return_value=mock_client), patch.object(
+            analyzer, "get_analysis_cleanup_client", return_value=cleanup_client
+        ):
+            analysis, usage, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=False)
 
     assert analysis.startswith("# 清洗后标题")
     assert "$$\nE(w)=1\n$$" in analysis
@@ -314,16 +318,16 @@ def test_analyze_paper_keeps_original_when_cleanup_fails():
         return result[:2]
 
     with patch.object(analyzer, "extract_pdf_text", return_value="pdf text"), patch.object(
-        analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
-    ), patch.object(
         analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_enabled_request
-    ), patch.object(
-        analyzer.ai_client, "structured_chat_completion_with_usage", side_effect=fake_structured_completion
-    ), patch.object(
-        analyzer, "analysis_cleanup_client"
-    ) as cleanup_client:
-        cleanup_client.structured_chat_completion_with_usage.side_effect = Exception("cleanup unavailable")
-        analysis, usage, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=False)
+    ):
+        mock_client = MagicMock()
+        mock_client.get_analysis_request_config.side_effect = fake_get_request_config
+        mock_client.structured_chat_completion_with_usage.side_effect = fake_structured_completion
+        with patch.object(analyzer, "get_ai_client", return_value=mock_client) as get_main_mock, patch.object(
+            analyzer, "get_analysis_cleanup_client"
+        ) as get_cleanup_mock:
+            get_cleanup_mock.return_value.structured_chat_completion_with_usage.side_effect = Exception("cleanup unavailable")
+            analysis, usage, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=False)
 
     assert analysis.startswith("# 原始标题")
     assert usage["total_tokens"] == 7

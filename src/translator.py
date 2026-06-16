@@ -4,7 +4,7 @@ import logging
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from config import ai_client
+from config import get_ai_client
 from cache import get_cached_translation, cache_translation
 
 logger = logging.getLogger(__name__)
@@ -155,14 +155,14 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
         try:
             messages = _build_translation_messages(paper, translate_title_only=translate_title_only)
             if translate_title_only:
-                structured, usage = ai_client.structured_chat_completion_with_usage(
+                structured, usage = get_ai_client().structured_chat_completion_with_usage(
                     messages=messages,
                     response_model=StructuredTitleTranslation,
                     json_schema_prompt=True,
                 )
                 translation = _render_title_translation(structured)
             else:
-                structured, usage = ai_client.structured_chat_completion_with_usage(
+                structured, usage = get_ai_client().structured_chat_completion_with_usage(
                     messages=messages,
                     response_model=StructuredAbstractTranslation,
                     json_schema_prompt=True,
@@ -171,7 +171,7 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
         except Exception as structured_error:
             logger.warning("结构化翻译失败，将回退到普通文本模式: %s", str(structured_error))
             prompt = _build_translation_fallback_prompt(paper, translate_title_only=translate_title_only)
-            translation = ai_client.chat_completion(
+            translation = get_ai_client().chat_completion(
                 messages=[
                     {"role": "system", "content": "你是一位偏微分方程与分析理论方向的学术翻译专家. "},
                     {"role": "user", "content": prompt},

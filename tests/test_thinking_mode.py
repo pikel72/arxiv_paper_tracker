@@ -6,7 +6,7 @@ import sys
 from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -350,18 +350,18 @@ def test_analyze_paper_uses_isolated_cache_keys_and_metadata():
         return True
 
     with patch.object(analyzer, "extract_pdf_text", return_value="pdf text"), patch.object(
-        analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
-    ), patch.object(
         analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_disabled_request
-    ), patch.object(
-        analyzer.ai_client, "structured_chat_completion_with_usage", side_effect=fake_structured_completion
     ), patch.object(
         analyzer, "get_cached_analysis", side_effect=fake_get_cached_analysis
     ), patch.object(
         analyzer, "cache_analysis", side_effect=fake_cache_analysis
     ):
-        _, _, plain_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=True, thinking_mode=False)
-        _, _, thinking_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=True, thinking_mode=True)
+        mock_client = MagicMock()
+        mock_client.get_analysis_request_config.side_effect = fake_get_request_config
+        mock_client.structured_chat_completion_with_usage.side_effect = fake_structured_completion
+        with patch.object(analyzer, "get_ai_client", return_value=mock_client):
+            _, _, plain_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=True, thinking_mode=False)
+            _, _, thinking_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=True, thinking_mode=True)
 
     assert len(seen_cache_keys) == 2
     assert seen_cache_keys[0] != seen_cache_keys[1]
@@ -405,17 +405,14 @@ def test_analyze_paper_falls_back_to_prompt_when_structured_path_fails():
         return result[:2]
 
     with patch.object(analyzer, "extract_pdf_text", return_value="pdf text"), patch.object(
-        analyzer.ai_client, "get_analysis_request_config", side_effect=fake_get_request_config
-    ), patch.object(
         analyzer, "get_analysis_cleanup_request_config", side_effect=cleanup_disabled_request
-    ), patch.object(
-        analyzer.ai_client,
-        "structured_chat_completion_with_usage",
-        side_effect=Exception("json schema unsupported"),
-    ), patch.object(
-        analyzer.ai_client, "chat_completion_with_usage", side_effect=fake_raw_completion
     ):
-        analysis, _, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=True)
+        mock_client = MagicMock()
+        mock_client.get_analysis_request_config.side_effect = fake_get_request_config
+        mock_client.structured_chat_completion_with_usage.side_effect = Exception("json schema unsupported")
+        mock_client.chat_completion_with_usage.side_effect = fake_raw_completion
+        with patch.object(analyzer, "get_ai_client", return_value=mock_client):
+            analysis, _, analysis_meta = analyzer.analyze_paper("paper.pdf", paper, use_cache=False, thinking_mode=True)
 
     assert analysis.startswith("# 测试标题")
     assert analysis_meta["structured_output_validated"] is False

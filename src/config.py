@@ -582,11 +582,14 @@ class AIClient:
     def _extract_structured_candidate_from_error_message(self, error_message):
         text = error_message or ""
         for field_name in ("content", "reasoning_content"):
-            pattern = rf"{field_name}='((?:\\\\.|[^'])*)'"
+            # 支持单引号或双引号包裹; 内容允许 \X 转义, 或非开引号的字符
+            # (?!\1). 用负向先行断言避免匹配开引号本身, 比 [^'] 更稳健
+            pattern = rf"""{field_name}=(['"])((?:\\.|(?!\1).)*)\1"""
             for match in re.finditer(pattern, text, re.S):
-                encoded = match.group(1)
+                quote = match.group(1)
+                encoded = match.group(2)
                 try:
-                    value = ast.literal_eval("'" + encoded + "'")
+                    value = ast.literal_eval(quote + encoded + quote)
                 except Exception:
                     value = encoded
                 candidate = self._normalize_json_candidate(value)
@@ -784,18 +787,33 @@ class AIClient:
                         raise Exception(f"AI API调用在 {max_retries} 次尝试后仍然失败 ({self.provider}): {str(e)}")
 
 
-ai_client = AIClient(AI_PROVIDER, AI_MODEL)
-analysis_cleanup_client = None
-if ANALYSIS_CLEANUP_ENABLED:
-    try:
-        analysis_cleanup_client = AIClient(ANALYSIS_CLEANUP_PROVIDER, ANALYSIS_CLEANUP_MODEL)
-    except Exception as e:
-        logger.warning("分析 cleanup 客户端初始化失败，将禁用 cleanup: %s", str(e))
+_ai_client_instance = None
+_analysis_cleanup_instance = None
+
+
+def get_ai_client():
+    """获取或创建主 AI 客户端 (lazy init)"""
+    global _ai_client_instance
+    if _ai_client_instance is None:
+        _ai_client_instance = AIClient(AI_PROVIDER, AI_MODEL)
+    return _ai_client_instance
+
+
+def get_analysis_cleanup_client():
+    """获取或创建 analysis cleanup 客户端 (lazy init, 配置禁用时返回 None)"""
+    global _analysis_cleanup_instance
+    if _analysis_cleanup_instance is None and ANALYSIS_CLEANUP_ENABLED:
+        try:
+            _analysis_cleanup_instance = AIClient(ANALYSIS_CLEANUP_PROVIDER, ANALYSIS_CLEANUP_MODEL)
+        except Exception as e:
+            logger.warning("分析 cleanup 客户端初始化失败，将禁用 cleanup: %s", str(e))
+    return _analysis_cleanup_instance
 
 
 def get_analysis_cleanup_request_config():
+    cleanup_client = get_analysis_cleanup_client()
     config = {
-        "cleanup_requested": bool(ANALYSIS_CLEANUP_ENABLED and analysis_cleanup_client is not None),
+        "cleanup_requested": cleanup_client is not None,
         "cleanup_attempted": False,
         "cleanup_applied": False,
         "cleanup_provider": "",
@@ -811,7 +829,7 @@ def get_analysis_cleanup_request_config():
     if not config["cleanup_requested"]:
         return config
 
-    request_config = analysis_cleanup_client.get_analysis_request_config(thinking_mode=ANALYSIS_CLEANUP_THINKING_MODE)
+    request_config = cleanup_client.get_analysis_request_config(thinking_mode=ANALYSIS_CLEANUP_THINKING_MODE)
     config.update(
         {
             "cleanup_provider": request_config["provider"],
