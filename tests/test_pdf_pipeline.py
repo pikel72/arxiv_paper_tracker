@@ -120,6 +120,16 @@ def test_extract_pdf_text_falls_back_to_pdfplumber_when_pymupdf_fails():
     assert text.count("=== 第") == 1
 
 
+def test_fallback_analysis_prompt_keeps_full_quality_requirements():
+    prompt = analyzer._build_fallback_analysis_messages("pdf text", paper=DummyPaper())[1]["content"]
+
+    assert prompt.count("约 2000 字左右") == 3
+    assert "应完整列出主要定理的结论" in prompt
+    assert "作者的真正创新点是什么" in prompt
+    assert "与已有工作的差别" in prompt
+    assert "可按论证层次使用自然段、小标题或有序分点" in prompt
+
+
 def test_analyze_paper_records_prompt_budget_estimate():
     paper = DummyPaper()
     pdf_text = "\n=== 第1页 ===\npdf text\n"

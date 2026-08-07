@@ -25,6 +25,7 @@ from cache import (
 )
 from config import (
     ANALYSIS_CLEANUP_THINKING_MODE,
+    ANALYSIS_REQUEST_TIMEOUT,
     PRIORITY_TOPICS,
     SECONDARY_TOPICS,
     get_ai_client,
@@ -132,16 +133,6 @@ ANALYSIS_CONTENT_REQUIREMENTS = """
 8. 公式格式：行内公式用 $...$, 行间公式用 $$...$$, 不要使用 \\[...\\]. 使用标准 LaTeX 命令, 不要使用不规范的符号或自定义命令. 
 9. 应当多使用公式, 尽可能准确地表达数学内容; 避免过度使用文字描述, 以免引入不必要的歧义.
 10. 如果作者区分“严格证明的结论”和“启发式解释/物理图像/未来方向”, 请在表述上区分清楚, 不要混为一谈. 
-""".strip()
-
-ANALYSIS_FALLBACK_REQUIREMENTS = """
-内容要求：
-1. 回答对象始终是偏微分方程与分析理论方向的研究者, 而不是泛科学读者或宣传稿读者.
-2. 研究对象和背景：说明研究对象、方程/模型设定、关键未知量、问题背景、本文试图解决的核心空白；尽量写出具体方程或核心表达式, 不要停留在方向标签.
-3. 主要定理或主要结果：尽量写出作者真正证明的核心结论、关键假设、函数空间、尺度关系、误差阶、增长率或代表性公式.
-4. 研究方法、关键技术和核心工具：解释主要技术障碍、关键创新和证明框架；如果文中出现新的泛函、单调量、能量方法、bootstrap、紧性、Carleman 估计、Strichartz 估计、频率分解等工具, 尽量具体点明它们起什么作用.
-5. 与之前工作的比较：比较本文相对前人工作的推进、适用范围、时间尺度、附加假设与局限；如果文中没有足够信息, 请明确说明.
-6. 尽量多用数学上可核对的表述与公式, 减少空泛修辞；不能确认的内容要明确说无法确认.
 """.strip()
 
 CLASSIFICATION_CONTENT_REQUIREMENTS = """
@@ -599,9 +590,10 @@ def _build_fallback_analysis_messages(pdf_content, paper=None, title=None):
         "格式要求：\n"
         "1. 标题必须按以上层级输出. \n"
         "2. 不要把章节标题加粗. \n"
-        "3. 章节内容使用自然段, 不要列表. \n"
+        "3. 章节内容应充分展开；可按论证层次使用自然段、小标题或有序分点, 不要把多个技术环节压缩成一个概括性段落. \n"
         "4. 行内公式使用 $...$, 行间公式使用 $$...$$, 不要使用 \\[...\\]. \n\n"
-        f"{ANALYSIS_FALLBACK_REQUIREMENTS}\n\n"
+        # 回退只改变输出格式，不降低篇幅、数学细节或前人工作比较等质量要求。
+        f"{ANALYSIS_CONTENT_REQUIREMENTS}\n\n"
         "请分析以下论文：\n\n"
         f"{context}\n"
         "论文PDF内容:\n"
@@ -892,6 +884,7 @@ def _run_analysis_pipeline(
                 response_model=StructuredPaperAnalysis,
                 thinking_mode=thinking_mode,
                 return_response_state=True,
+                timeout=ANALYSIS_REQUEST_TIMEOUT,
             )
             analysis_meta = _finalize_analysis_meta(
                 {**response_state, **request_state},
@@ -910,6 +903,7 @@ def _run_analysis_pipeline(
                 messages=fallback_messages,
                 thinking_mode=False,
                 return_response_state=True,
+                timeout=ANALYSIS_REQUEST_TIMEOUT,
             )
             normalized = normalize_analysis_markdown(analysis, extract_analysis_title(analysis, fallback_title))
             analysis_meta = _finalize_analysis_meta(

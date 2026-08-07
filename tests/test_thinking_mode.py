@@ -165,7 +165,7 @@ def test_qwen_thinking_request_falls_back_to_plain_mode():
     assert usage["total_tokens"] == 3
     assert len(completion_fn.calls) == 2
     assert completion_fn.calls[0]["extra_body"]["enable_thinking"] is True
-    assert "extra_body" not in completion_fn.calls[1]
+    assert completion_fn.calls[1]["extra_body"]["enable_thinking"] is False
     assert response_state["thinking_applied"] is False
     assert response_state["fallback_used"] is True
 
@@ -420,6 +420,8 @@ def test_analyze_paper_falls_back_to_prompt_when_structured_path_fails():
     assert analysis_meta["reasoning_content_present"] is True
     assert analysis_meta["thinking_applied"] is False
     assert seen_thinking_modes == [False]
+    assert mock_client.structured_chat_completion_with_usage.call_args.kwargs["timeout"] == analyzer.ANALYSIS_REQUEST_TIMEOUT
+    assert mock_client.chat_completion_with_usage.call_args.kwargs["timeout"] == analyzer.ANALYSIS_REQUEST_TIMEOUT
 
 
 def test_deepseek_thinking_uses_v4_pro_with_thinking_params():
@@ -467,6 +469,20 @@ def test_deepseek_v4_plain_mode_disables_default_thinking():
 
     assert request_config["thinking_applied"] is False
     assert request_config["extra_body"]["thinking"] == {"type": "disabled"}
+
+
+def test_qwen_plain_mode_disables_default_thinking():
+    client = config.AIClient.__new__(config.AIClient)
+    client.provider = "qwen"
+    client.model = "qwen3.7-max"
+    client.provider_config = config.PROVIDER_CONFIG["qwen"]
+    client.thinking_support = client.provider_config["thinking_support"]
+    client.completion_fn = None
+
+    request_config = client.get_analysis_request_config(thinking_mode=False)
+
+    assert request_config["thinking_applied"] is False
+    assert request_config["extra_body"]["enable_thinking"] is False
 
 
 def test_nvidia_nim_provider_uses_openai_compatible_defaults():

@@ -84,6 +84,7 @@ ANALYSIS_CLEANUP_PROVIDER = os.getenv("ANALYSIS_CLEANUP_PROVIDER") or AI_PROVIDE
 ANALYSIS_CLEANUP_MODEL = os.getenv("ANALYSIS_CLEANUP_MODEL") or AI_MODEL
 ANALYSIS_CLEANUP_THINKING_MODE = _get_bool_env("ANALYSIS_CLEANUP_THINKING_MODE", "off")
 AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "120"))
+ANALYSIS_REQUEST_TIMEOUT = int(os.getenv("ANALYSIS_REQUEST_TIMEOUT", "600"))
 STRUCTURED_MAX_RETRIES = int(os.getenv("STRUCTURED_MAX_RETRIES", "1"))
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -371,6 +372,9 @@ class AIClient:
         }
 
         if not thinking_mode:
+            if self.thinking_support == "enable_thinking":
+                # Qwen3 系列默认可能启用思考；普通模式必须显式关闭，避免配置与实际请求不一致。
+                config["extra_body"]["enable_thinking"] = False
             if self.thinking_support == "deepseek_thinking" and self.model.startswith("deepseek-v4"):
                 config["extra_body"]["thinking"] = {"type": "disabled"}
             return config
