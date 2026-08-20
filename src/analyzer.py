@@ -97,7 +97,7 @@ class StructuredTopicClassification(BaseModel):
 
     priority: int = Field(description="分类优先级, 只能是 0、1、2. 0 表示不相关, 1 表示优先级1, 2 表示优先级2. ")
     reason: str = Field(
-        description="分类原因. priority 为 1 或 2 时应尽量点出具体方程、估计、函数空间、理论主题或技术关键词, 不要泛泛写成“与分析相关”. "
+        description="简短分类原因. priority 为 1 或 2 时尽量控制在 20 字左右. "
     )
 
     @field_validator("priority", mode="before")
@@ -133,15 +133,6 @@ ANALYSIS_CONTENT_REQUIREMENTS = """
 8. 公式格式：行内公式用 $...$, 行间公式用 $$...$$, 不要使用 \\[...\\]. 使用标准 LaTeX 命令, 不要使用不规范的符号或自定义命令. 
 9. 应当多使用公式, 尽可能准确地表达数学内容; 避免过度使用文字描述, 以免引入不必要的歧义.
 10. 如果作者区分“严格证明的结论”和“启发式解释/物理图像/未来方向”, 请在表述上区分清楚, 不要混为一谈. 
-""".strip()
-
-CLASSIFICATION_CONTENT_REQUIREMENTS = """
-分类要求：
-1. 请以偏微分方程与分析理论研究者的眼光判断相关性, 不要按学科大类或应用场景机械归类.
-2. 优先关注论文是否真正涉及存在唯一性、正则性、爆破、散射、衰减、稳定性、渐近行为、先验估计、函数空间理论、调和分析工具、边界层、无粘极限、色散估计等理论问题.
-3. 如果论文主要是数值模拟、算法实现、工程建模、机器学习应用或实验现象描述, 而缺少明确的 PDE/分析理论推进, 应降低优先级或判为不相关.
-4. `reason` 应尽量点出具体对象或技术关键词, 如“Navier-Stokes 正则性”“Strichartz 估计与散射”“椭圆边界正则性”“无粘极限”, 避免泛泛写成“与分析有关”.
-5. 分类要克制；如果只是在背景中提到某个方程, 但正文不是理论分析, 应谨慎处理.
 """.strip()
 
 ANALYSIS_CLEANUP_REQUIREMENTS = """
@@ -723,7 +714,6 @@ def _build_classification_messages(paper, abstract):
     author_names = [author.name for author in paper.authors]
     prompt = (
         "请严格按照给定的结构化 schema 返回分类结果. \n\n"
-        f"{CLASSIFICATION_CONTENT_REQUIREMENTS}\n\n"
         "你需要判断论文与我关注主题的相关性, 并返回：\n"
         "1. `priority`: 只能是 0、1、2. 0 表示不相关, 1 表示重点关注, 2 表示了解领域. \n"
         "2. `reason`: 给出简短原因. priority 为 1 或 2 时尽量控制在 20 字左右. \n\n"
@@ -738,7 +728,7 @@ def _build_classification_messages(paper, abstract):
         f"{chr(10).join([f'- {topic}' for topic in SECONDARY_TOPICS])}\n"
     )
     return [
-        {"role": "system", "content": "你是一位偏微分方程与分析理论方向的学术论文分类专家. 请严格遵守返回 schema. "},
+        {"role": "system", "content": "你是一位专业的学术论文分类专家. 请严格遵守返回 schema. "},
         {"role": "user", "content": prompt},
     ]
 
@@ -746,8 +736,6 @@ def _build_classification_messages(paper, abstract):
 def _build_classification_fallback_prompt(paper, abstract):
     author_names = [author.name for author in paper.authors]
     return f"""
-        {CLASSIFICATION_CONTENT_REQUIREMENTS}
-
         论文标题: {paper.title}
         作者: {', '.join(author_names)}
         摘要: {abstract}
@@ -810,7 +798,7 @@ def check_topic_relevance(paper):
             logger.warning("结构化分类失败, 将回退到普通文本模式: %s", str(structured_error))
             result = get_ai_client().chat_completion(
                 messages=[
-                    {"role": "system", "content": "你是一位偏微分方程与分析理论方向的学术论文分类专家. 请严格按照要求的格式回答. "},
+                    {"role": "system", "content": "你是一位专业的学术论文分类专家. 请严格按照要求的格式回答. "},
                     {"role": "user", "content": _build_classification_fallback_prompt(paper, abstract)},
                 ]
             )
