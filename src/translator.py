@@ -1,6 +1,8 @@
 # translator.py - 翻译摘要模块
 
 import logging
+import re
+from types import SimpleNamespace
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -8,6 +10,58 @@ from config import get_ai_client
 from cache import get_cached_translation, cache_translation
 
 logger = logging.getLogger(__name__)
+
+# 旧缓存可能含已损坏的公式；修复后不能继续把这些译文当作有效结果复用。
+TRANSLATION_SCHEMA_VERSION = "translation_v2_verbatim_math"
+_MATH_FRAGMENT_RE = re.compile(
+    r"(?<!\\)\$\$[\s\S]*?(?<!\\)\$\$"
+    r"|(?<![\\$])\$(?!\$)[\s\S]*?(?<!\\)\$(?!\$)"
+    r"|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]"
+)
+
+
+def _protect_translation_math(paper, translate_title_only=False):
+    # 公式由原文直接回填，避免模型重写符号或 JSON 转义损坏 LaTeX。
+    source_text = paper.title + "\n" + paper.summary
+    prefix = "ARXIV_MATH_"
+    while prefix in source_text:
+        prefix = "_" + prefix
+    fragments = {}
+
+    def protect(text):
+        def replace(match):
+            token = f"{prefix}{len(fragments):04d}"
+            fragments[token] = match.group(0)
+            return token
+
+        return _MATH_FRAGMENT_RE.sub(replace, text)
+
+    protected = SimpleNamespace(
+        title=protect(paper.title),
+        summary="" if translate_title_only else protect(paper.summary),
+    )
+    return protected, fragments
+
+
+def _restore_translation_math(translation, fragments):
+    for token, fragment in fragments.items():
+        # 丢掉或重复占位符意味着原摘要的公式结构已改变，不能静默发布。
+        if translation.count(token) != 1:
+            raise ValueError(f"翻译未完整保留公式占位符: {token}")
+        translation = translation.replace(token, fragment)
+    if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", translation):
+        raise ValueError("翻译含非法控制字符")
+    return translation
+
+
+def _translation_math_instructions(fragments):
+    if not fragments:
+        return ""
+    return (
+        "\n\n公式已替换为不需翻译的占位符: " + ", ".join(fragments)
+        + ". 每个占位符必须在原句位置完整保留一次, 不得改写、遗漏或重复; "
+        "不要另写公式. 程序会用原文逐字符回填."
+    )
 
 TRANSLATION_TITLE_REQUIREMENTS = """
 翻译要求：
@@ -137,15 +191,18 @@ def _build_translation_fallback_prompt(paper, translate_title_only=False):
 def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cache=True):
     """使用DeepSeek API翻译论文摘要"""
     arxiv_id = paper.get_short_id()
+    cache_id = f"{arxiv_id}:{TRANSLATION_SCHEMA_VERSION}"
 
     if use_cache:
-        cached = get_cached_translation(arxiv_id, title_only=translate_title_only)
+        cached = get_cached_translation(cache_id, title_only=translate_title_only)
         if cached is not None:
             cache_type = "标题" if translate_title_only else "摘要"
             logger.info(f"[缓存命中] {cache_type}翻译: {paper.title}")
             return cached
 
     try:
+        protected_paper, math_fragments = _protect_translation_math(paper, translate_title_only)
+        math_instructions = _translation_math_instructions(math_fragments)
         usage = {}
         if translate_title_only:
             logger.info(f"正在翻译标题: {paper.title}")
@@ -153,7 +210,8 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
             logger.info(f"正在翻译摘要: {paper.title}")
 
         try:
-            messages = _build_translation_messages(paper, translate_title_only=translate_title_only)
+            messages = _build_translation_messages(protected_paper, translate_title_only=translate_title_only)
+            messages[-1]["content"] += math_instructions
             if translate_title_only:
                 structured, usage = get_ai_client().structured_chat_completion_with_usage(
                     messages=messages,
@@ -168,15 +226,18 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
                     json_schema_prompt=True,
                 )
                 translation = _render_abstract_translation(structured)
+            translation = _restore_translation_math(translation, math_fragments)
         except Exception as structured_error:
             logger.warning("结构化翻译失败，将回退到普通文本模式: %s", str(structured_error))
-            prompt = _build_translation_fallback_prompt(paper, translate_title_only=translate_title_only)
+            prompt = _build_translation_fallback_prompt(protected_paper, translate_title_only=translate_title_only)
+            prompt += math_instructions
             translation = get_ai_client().chat_completion(
                 messages=[
                     {"role": "system", "content": "你是一位偏微分方程与分析理论方向的学术翻译专家. "},
                     {"role": "user", "content": prompt},
                 ]
             )
+            translation = _restore_translation_math(translation, math_fragments)
 
         # 提取翻译后的标题用于日志
         translated_title = ""
@@ -202,7 +263,7 @@ def translate_abstract_with_deepseek(paper, translate_title_only=False, use_cach
             )
         
         if use_cache:
-            cache_translation(arxiv_id, translation, title_only=translate_title_only)
+            cache_translation(cache_id, translation, title_only=translate_title_only)
         return translation
     except Exception as e:
         if translate_title_only:

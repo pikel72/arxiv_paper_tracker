@@ -25,14 +25,12 @@ def _extract_abstract_translation(text: str) -> str:
     for idx, line in enumerate(lines):
         if line.startswith("**摘要翻译**:"):
             content = line.replace("**摘要翻译**:", "").strip()
-            if content:
-                return content
-            tail = []
+            # 显示公式和后续结论常在新行；只返回标签所在行会截断完整摘要。
+            tail = [content] if content else []
             for rest in lines[idx + 1:]:
-                if rest.startswith("**") and rest.endswith("**:"):
+                if re.match(r"^\*\*[^*]+\*\*\s*[:：]", rest.strip()):
                     break
-                if rest.strip():
-                    tail.append(rest.strip())
+                tail.append(rest)
             return "\n".join(tail).strip()
     return ""
 
