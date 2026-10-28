@@ -121,13 +121,16 @@ def test_extract_pdf_text_falls_back_to_pdfplumber_when_pymupdf_fails():
 
 
 def test_fallback_analysis_prompt_keeps_full_quality_requirements():
-    prompt = analyzer._build_fallback_analysis_messages("pdf text", paper=DummyPaper())[1]["content"]
+    # 两条请求路径必须携带同一份完整要求，避免回退后只剩四节短摘要。
+    for builder in (analyzer._build_structured_analysis_messages, analyzer._build_fallback_analysis_messages):
+        prompt = builder("pdf text", paper=DummyPaper())[1]["content"]
 
-    assert prompt.count("约 2000 字左右") == 3
-    assert "应完整列出主要定理的结论" in prompt
-    assert "作者的真正创新点是什么" in prompt
-    assert "与已有工作的差别" in prompt
-    assert "可按论证层次使用自然段、小标题或有序分点" in prompt
+        assert analyzer.ANALYSIS_CONTENT_REQUIREMENTS in prompt
+        assert "独立 Markdown 引用块" in prompt
+        assert "#### a) 核心分析学工具" in prompt
+        assert "#### b) 技术性难题的解决技巧" in prompt
+        assert "6000–8000" in prompt
+        assert "pdf text" in prompt
 
 
 def test_analyze_paper_records_prompt_budget_estimate():

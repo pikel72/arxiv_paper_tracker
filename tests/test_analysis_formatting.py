@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from analyzer import (
     StructuredPaperAnalysis,
+    _structured_analysis_from_markdown,
     extract_analysis_title,
     render_analysis_body,
     render_structured_analysis_markdown,
@@ -119,6 +120,42 @@ def test_validate_analysis_markdown_flags_literal_display_math_escapes():
     assert "存在非法块公式转义: $$\\n" in issues
 
 
+def test_analysis_round_trip_preserves_theorem_blocks_and_method_headings():
+    # 生成结果还会经过普通文本归一化及 cleanup 输入转换，定理层次不能在这些步骤丢失。
+    results = (
+        "先介绍结果的整体含义。\n\n"
+        "> **定理 1.1**\n>\n> 设 $u_0$ 满足以下条件：\n>\n"
+        "> 1. 初始能量有限。\n> 2. 初始数据足够小。\n>\n"
+        "> 则有以下估计：\n>\n> $$\n> E(t) \\le E(0).\n> $$\n\n"
+        "这一结论控制了解的能量。\n\n"
+        "> **推论 1.2**\n>\n> 在上述假设下，解可以延拓。\n\n"
+        "推论的意义另起一段说明。"
+    )
+    methods = (
+        "先说明整体证明路线。\n\n"
+        "#### a) 核心分析学工具\n\n"
+        "- **能量方法**：解释工具的基本思想。\n\n"
+        "  再解释它在本文中的用途。\n\n"
+        "#### b) 技术性难题的解决技巧\n\n"
+        "- **非线性项的控制**：解释具体分工。"
+    )
+    original = StructuredPaperAnalysis(
+        chinese_title="测试导读",
+        research_background="研究对象。\n\n背景与目标。",
+        main_results=results,
+        methods_and_tools=methods,
+        comparison_with_previous_work="**假设的变化**：充分解释。\n\n**结果的意义**：另起一段。",
+    )
+    rendered = render_structured_analysis_markdown(original)
+    normalized_body = render_analysis_body(rendered)
+    recovered = _structured_analysis_from_markdown(normalized_body, original.chinese_title)
+
+    assert recovered.model_dump() == original.model_dump()
+    assert results in normalized_body
+    assert methods in normalized_body
+    assert validate_analysis_markdown(rendered) == []
+
+
 if __name__ == "__main__":
     test_extract_and_render_old_heading_style()
     test_extract_and_render_plain_title_style()
@@ -126,4 +163,5 @@ if __name__ == "__main__":
     test_render_structured_analysis_markdown()
     test_render_structured_analysis_preserves_subparagraphs()
     test_validate_analysis_markdown_flags_literal_display_math_escapes()
+    test_analysis_round_trip_preserves_theorem_blocks_and_method_headings()
     print("analysis formatting tests passed")
