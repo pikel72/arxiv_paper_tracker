@@ -172,6 +172,8 @@ def main():
     # 批量模式参数
     parser.add_argument('--date', type=str, 
                        help='指定抓取日期，格式: YYYYMMDD 或 YYYYMMDD:YYYYMMDD（日期范围），也支持 YYYY-MM-DD')
+    # 定时备用链路通过 Hermes 推送结果，避免重复发送邮件。
+    parser.add_argument('--no-email', action='store_true', help='不发送邮件')
     
     # 单论文分析参数
     parser.add_argument('--arxiv', type=str, 
@@ -358,12 +360,16 @@ def main():
     )
     
     # 发送邮件，包含附件
-    email_content = format_email_content(priority_analyses_clean, secondary_analyses, irrelevant_papers, run_meta=run_meta)
-    email_success = send_email(email_content, attachment_path=result_file)
+    if args.no_email:
+        email_success = None
+        logger.info("按配置跳过邮件发送")
+    else:
+        email_content = format_email_content(priority_analyses_clean, secondary_analyses, irrelevant_papers, run_meta=run_meta)
+        email_success = send_email(email_content, attachment_path=result_file)
     
     if email_success:
         logger.info("邮件发送完成")
-    else:
+    elif email_success is False:
         logger.warning("邮件发送可能失败，请手动检查")
     
     # 所有操作完成后，最后清理 PDF 文件
