@@ -10,6 +10,11 @@ pytest.importorskip('fcntl')
 import daily_backup as backup
 
 
+@pytest.fixture(autouse=True)
+def isolated_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(backup, 'STATE', tmp_path / 'state')
+
+
 def test_windows_match_original_weekday_logic():
     assert backup.window(dt.date(2026, 10, 26)) == (
         dt.datetime(2026, 10, 22, 18, tzinfo=dt.timezone.utc),
@@ -68,3 +73,108 @@ def test_author_search_has_no_category_filter_and_deduplicates(tmp_path, monkeyp
     assert len(result) == 1
     assert all('cat:' not in query for query in queries)
     assert result[entry.id]['matched'] == {'Yongzhong Sun'}
+
+
+def response(status, headers=None):
+    result = backup.requests.Response()
+    result.status_code = status
+    result.headers.update(headers or {})
+    result._content = b'feed'
+    return result
+
+
+def test_rate_limit_honors_retry_after_and_recovers(monkeypatch):
+    responses = iter([response(429, {'Retry-After': '180'}), response(200)])
+    waits = []
+    monkeypatch.setattr(backup.requests, 'get', lambda *a, **kw: next(responses))
+    monkeypatch.setattr(backup.time, 'sleep', waits.append)
+    assert backup.api_response({}).status_code == 200
+    assert 180 in waits
+
+
+def test_retry_after_http_date():
+    from email.utils import format_datetime
+    after = format_datetime(dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10))
+    assert backup.retry_delay(response(429, {'Retry-After': after}), 0) > 590
+
+
+def test_repeated_429_is_failure_not_empty_result(monkeypatch):
+    calls = []
+    def get(*args, **kwargs):
+        calls.append(1)
+        return response(429)
+    monkeypatch.setattr(backup.requests, 'get', get)
+    monkeypatch.setattr(backup.time, 'sleep', lambda _: None)
+    with pytest.raises(RuntimeError, match='5 次'):
+        backup.api_response({})
+    assert len(calls) == 5
+
+
+def test_non_retryable_error_fails_immediately(monkeypatch):
+    calls = []
+    def get(*args, **kwargs):
+        calls.append(1)
+        return response(400)
+    monkeypatch.setattr(backup.requests, 'get', get)
+    with pytest.raises(backup.requests.HTTPError):
+        backup.api_response({})
+    assert len(calls) == 1
+
+
+def test_full_published_report_skips_api(monkeypatch):
+    day = dt.date(2026, 10, 29)
+    report = (Path('report.md'), {'selection_capped': 'false', 'total_papers': '42'})
+    bounds = backup.window(day)
+    monkeypatch.setattr(backup, 'window', lambda _: bounds)
+    monkeypatch.setattr(backup, 'sync_pages', lambda: None)
+    monkeypatch.setattr(backup, 'report_for', lambda *a: report)
+    monkeypatch.setattr(backup, 'query', lambda *a: pytest.fail('已发布的全量日报不应再次抓取'))
+    printed = []
+    monkeypatch.setattr(backup, 'print_report', lambda *a: printed.append(a))
+    backup.main()
+    assert printed[0][1] == report
+
+
+def test_author_failure_preserves_report_summary(monkeypatch, capsys):
+    def unavailable(*a):
+        raise RuntimeError('429')
+    monkeypatch.setattr(backup, 'author_news', unavailable)
+    backup.print_report(dt.date(2026, 10, 29), (Path('report.md'), {'total_papers': '42', 'completed_papers': '42'}))
+    text = capsys.readouterr().out
+    assert '共 42 篇' in text
+    assert '无法确认是否有新论文' in text
+    assert '本期没有匹配' not in text
+
+
+def test_maintenance_backlog_included_in_next_report():
+    day = dt.date(2026, 10, 30)
+    expected_start = dt.datetime(2026, 10, 27, 18, tzinfo=dt.timezone.utc)
+    assert backup.window(day)[0] == expected_start
+    assert backup.author_window(day)[0] == expected_start
+    assert backup.window(day)[1] == dt.datetime(2026, 10, 29, 18, tzinfo=dt.timezone.utc)
+
+
+def test_confirmed_maintenance_empty_is_explained(monkeypatch, capsys):
+    monkeypatch.setattr(backup, 'sync_pages', lambda: None)
+    monkeypatch.setattr(backup, 'report_for', lambda *a: None)
+    monkeypatch.setattr(backup, 'query', lambda *a: [])
+    monkeypatch.setattr(backup, 'schedule_for', lambda _: {
+        'no_announcement': True, 'reason': '数据库迁移暂停发布', 'source': 'https://status.arxiv.org/'})
+    monkeypatch.setattr(backup, 'print_author_updates', lambda *a: None)
+    monkeypatch.setattr(backup, 'window', lambda _: (
+        dt.datetime(2026, 10, 27, 18, tzinfo=dt.timezone.utc),
+        dt.datetime(2026, 10, 28, 18, tzinfo=dt.timezone.utc)))
+    backup.main()
+    assert '官方暂停发布' in capsys.readouterr().out
+
+
+def test_unexplained_empty_still_fails(monkeypatch):
+    monkeypatch.setattr(backup, 'sync_pages', lambda: None)
+    monkeypatch.setattr(backup, 'report_for', lambda *a: None)
+    monkeypatch.setattr(backup, 'query', lambda *a: [])
+    monkeypatch.setattr(backup, 'schedule_for', lambda _: {})
+    monkeypatch.setattr(backup, 'window', lambda _: (
+        dt.datetime(2026, 10, 27, 18, tzinfo=dt.timezone.utc),
+        dt.datetime(2026, 10, 28, 18, tzinfo=dt.timezone.utc)))
+    with pytest.raises(RuntimeError, match='没有检索到论文'):
+        backup.main()

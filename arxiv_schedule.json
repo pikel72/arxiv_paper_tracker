@@ -1,0 +1,13 @@
+{
+  "2026-10-29": {
+    "no_announcement": true,
+    "reason": "arXiv 数据库迁移，10 月 28 日晚暂停发布；本批次延至北京时间 10 月 30 日 08:00 发布。",
+    "source": "https://status.arxiv.org/"
+  },
+  "2026-10-30": {
+    "start_override": "2026-10-27T18:00:00+00:00",
+    "author_start_override": "2026-10-27T18:00:00+00:00",
+    "reason": "合并数据库迁移期间积压的两天论文，避免遗漏 10 月 27 日 18:00 UTC 起的提交。",
+    "source": "https://status.arxiv.org/"
+  }
+}
