@@ -1,4 +1,5 @@
 """Hermes 备用日报：核对远端、补跑并检索关注作者。"""
+import argparse
 import datetime as dt
 from email.utils import parsedate_to_datetime
 import fcntl
@@ -197,8 +198,8 @@ def report_for(day, expected=None):
     return None
 
 
-def main():
-    day = dt.datetime.now(TZ).date()
+def main(day=None):
+    day = day or dt.datetime.now(TZ).date()
     bounds = window(day)
     if not bounds:
         # 关注作者仍逐日检查，不受 math.AP 周末跳过规则限制。
@@ -369,7 +370,10 @@ if __name__ == '__main__':
                 sync_pages()
                 print('true' if report_for(day, len(entries)) else 'false')
         else:
-            main()
+            parser = argparse.ArgumentParser(description='服务器备用日报和历史日期补跑')
+            parser.add_argument('--date', type=dt.date.fromisoformat, help='补跑的报告日期 YYYY-MM-DD（北京时间）')
+            args = parser.parse_args()
+            main(args.date)
     except AlreadyPublished as completed:
         print_report(completed.day, completed.report)
     except Exception as exc:

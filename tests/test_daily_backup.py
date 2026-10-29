@@ -131,7 +131,8 @@ def test_full_published_report_skips_api(monkeypatch):
     monkeypatch.setattr(backup, 'query', lambda *a: pytest.fail('已发布的全量日报不应再次抓取'))
     printed = []
     monkeypatch.setattr(backup, 'print_report', lambda *a: printed.append(a))
-    backup.main()
+    backup.main(day)
+    assert printed[0][0] == day
     assert printed[0][1] == report
 
 
