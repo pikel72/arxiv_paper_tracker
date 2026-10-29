@@ -179,3 +179,30 @@ def test_unexplained_empty_still_fails(monkeypatch):
         dt.datetime(2026, 10, 28, 18, tzinfo=dt.timezone.utc)))
     with pytest.raises(RuntimeError, match='没有检索到论文'):
         backup.main()
+
+
+def test_backup_pdf_uses_https():
+    entry = SimpleNamespace(title='Test', authors=[], published='2026-10-27T17:00:00Z',
+        tags=[], id='http://arxiv.org/abs/2610.37653v1', summary='Test')
+    assert backup.backup_paper(entry).entry_id == 'https://arxiv.org/abs/2610.37653v1'
+    assert entry.id.startswith('http://')
+
+
+def test_git_timeout_terminates_inherited_pipe_children(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import time
+    command = tmp_path / 'git'
+    pidfile = tmp_path / 'child.pid'
+    command.write_text('#!/usr/bin/python3\nimport subprocess,time\n'
+        'p=subprocess.Popen(["/bin/sleep","60"])\n'
+        f'open({str(pidfile)!r},"w").write(str(p.pid))\n'
+        'time.sleep(60)\n', encoding='utf-8')
+    command.chmod(0o700)
+    monkeypatch.setenv('PATH', str(tmp_path) + ':' + os.environ['PATH'])
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        backup.git('fetch', timeout=0.5, attempts=1)
+    assert time.monotonic() - started < 5
+    state = Path('/proc') / pidfile.read_text() / 'stat'
+    assert not state.exists() or state.read_text().split()[2] in {'Z', 'X'}

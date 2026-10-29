@@ -9,6 +9,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -76,13 +77,25 @@ class AlreadyPublished(BaseException):
         self.day, self.report = day, report
 
 
-def git(*args, cwd=None):
+def git(*args, cwd=None, timeout=45, attempts=None):
     env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
-    attempts = 3 if args[0] in {'fetch', 'push'} else 1
+    attempts = attempts if attempts is not None else (3 if args[0] in {'fetch', 'push'} else 1)
     for attempt in range(attempts):
         try:
-            return subprocess.run(['git', '-c', 'credential.helper=!gh auth git-credential', *args],
-                                  cwd=cwd, env=env, text=True, capture_output=True, check=True, timeout=120).stdout.strip()
+            command = ['git', '-c', 'credential.helper=!gh auth git-credential',
+                       '-c', 'http.lowSpeedLimit=1', '-c', 'http.lowSpeedTime=15', *args]
+            process = subprocess.Popen(command, cwd=cwd, env=env, text=True,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            try:
+                output, error = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # git 会启动 HTTPS/凭据子进程，必须一起终止，防止管道残留和后台挂起。
+                os.killpg(process.pid, signal.SIGKILL)
+                output, error = process.communicate()
+                raise subprocess.TimeoutExpired(command, timeout, output=output, stderr=error)
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, command, output=output, stderr=error)
+            return output.strip()
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             if attempt == attempts - 1:
                 raise
@@ -167,13 +180,13 @@ def author_news(start, end):
     return found
 
 
-def sync_pages():
+def sync_pages(quick=False):
     STATE.mkdir(parents=True, exist_ok=True)
     if not PAGES.exists():
-        git('clone', 'https://github.com/pikel72/pages_src.git', str(PAGES))
+        git('clone', 'https://github.com/pikel72/pages_src.git', str(PAGES), timeout=120)
     if git('status', '--porcelain', cwd=PAGES):
         raise RuntimeError('备用发布目录有未提交修改，停止以保护数据')
-    git('fetch', 'origin', 'main', cwd=PAGES)
+    git('fetch', 'origin', 'main', cwd=PAGES, timeout=20 if quick else 45, attempts=1 if quick else 3)
     git('checkout', '--detach', 'origin/main', cwd=PAGES)
 
 
@@ -196,6 +209,14 @@ def report_for(day, expected=None):
         if complete and report_date == day.isoformat():
             return path, fields
     return None
+
+
+def backup_paper(entry):
+    from models import SimplePaper
+    paper = SimplePaper(entry)
+    # API 中的旧 HTTP 链接在服务器直连时超时，HTTPS 下载已实测可用。
+    paper.entry_id = paper.entry_id.replace('http://arxiv.org/', 'https://arxiv.org/', 1)
+    return paper
 
 
 def main(day=None):
@@ -249,12 +270,21 @@ def main(day=None):
                     os.environ[value['name']] = value['value']
             os.environ.update(SEARCH_DAYS='1', LITELLM_LOCAL_MODEL_COST_MAP='True')
             import main as tracker
-            from models import SimplePaper
             pending = STATE / 'pending' / ('arxiv_analysis_' + day.isoformat() + '_12-00-00.md')
             if pending.exists():
                 text = pending.read_text(encoding='utf-8')
             else:
-                tracker.get_recent_papers = lambda *a, **k: [SimplePaper(e) for e in entries]
+                tracker.get_recent_papers = lambda *a, **k: [backup_paper(e) for e in entries]
+                original_download = tracker.download_paper
+
+                def complete_download(*args, **kwargs):
+                    path = original_download(*args, **kwargs)
+                    # 完整补跑不能把重点论文的下载失败悄悄降级成摘要翻译。
+                    if not path:
+                        raise RuntimeError('重点论文 PDF 未下载成功，不能计为完整分析')
+                    return path
+
+                tracker.download_paper = complete_download
                 original_record = tracker.record_paper_result
                 last_check = time.monotonic()
 
@@ -264,7 +294,7 @@ def main(day=None):
                     if time.monotonic() - last_check >= 120:
                         last_check = time.monotonic()
                         try:
-                            sync_pages()
+                            sync_pages(quick=True)
                             current = report_for(day, len(entries))
                         except Exception as exc:
                             logging.warning('检查远端日报失败，稍后重试: %s', exc)
@@ -274,7 +304,7 @@ def main(day=None):
                     return original_record(*args)
 
                 tracker.record_paper_result = record_with_check
-                existing = set((ROOT / 'results').glob('arxiv_analysis_*.md'))
+                existing = set((ROOT / 'results').glob('arxiv_analysis_[0-9]*.md'))
                 sys.argv = ['main.py', '--date', (start.date() + dt.timedelta(days=1)).isoformat() + ':' + end.date().isoformat(), '--no-email', '--no-thinking']
                 with (STATE / ('run-' + day.isoformat() + '.log')).open('a', encoding='utf-8') as log:
                     old = sys.stdout
@@ -286,7 +316,7 @@ def main(day=None):
                             if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
                                 handler.setStream(old)
                         sys.stdout = old
-                new = sorted(set((ROOT / 'results').glob('arxiv_analysis_*.md')) - existing)
+                new = sorted(set((ROOT / 'results').glob('arxiv_analysis_[0-9]*.md')) - existing)
                 if len(new) != 1:
                     raise RuntimeError('没有生成唯一的完整报告')
                 text = new[0].read_text(encoding='utf-8')
