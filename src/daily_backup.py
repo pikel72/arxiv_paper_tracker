@@ -27,6 +27,13 @@ TZ = dt.timezone(dt.timedelta(hours=8))
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
+class RateLimited(RuntimeError):
+    """交给下一调度时段重试，不在当前进程等待或发送告警。"""
+    def __init__(self, retry_at):
+        super().__init__('arXiv HTTP 429')
+        self.retry_at = retry_at
+
+
 def retry_delay(response, attempt):
     """限流需要分钟级冷却；优先遵守服务端给出的恢复时间。"""
     delay = min(60 * (2 ** attempt), 600)
@@ -47,6 +54,9 @@ def api_response(params):
     STATE.mkdir(parents=True, exist_ok=True)
     with (STATE / 'api.lock').open('a+') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        cooldown = STATE / 'api-retry-after'
+        if cooldown.exists() and float(cooldown.read_text()) > time.time():
+            raise RateLimited(float(cooldown.read_text()))
         for attempt in range(5):
             lock.seek(0)
             previous = lock.read().strip()
@@ -59,6 +69,11 @@ def api_response(params):
             response = None
             try:
                 response = requests.get(API, params=params, timeout=60)
+                if response.status_code == 429:
+                    retry_at = time.time() + retry_delay(response, attempt)
+                    # 服务端冷却期是全局限制，跨报告日期也必须遵守。
+                    cooldown.write_text(str(retry_at))
+                    raise RateLimited(retry_at)
                 response.raise_for_status()
                 return response
             except requests.RequestException as exc:
@@ -134,6 +149,9 @@ def query(search, start, end, page_size=200):
         # 重跑复用成功的查询页；错误响应不入缓存，也不回退到过期结果。
         cache = STATE / 'api-cache' / (hashlib.sha256(json.dumps(params, sort_keys=True).encode()).hexdigest() + '.xml')
         cached = cache.exists() and time.time() - cache.stat().st_mtime < 6 * 3600
+        if cache.exists() and os.environ.get('ARXIV_REUSE_QUERY_CACHE') == '1':
+            # 跨时段继续使用已成功取得的非空快照；空结果仍须到期刷新。
+            cached = cached or int(feedparser.parse(cache.read_bytes()).feed.get('opensearch_totalresults', 0)) > 0
         content = cache.read_bytes() if cached else api_response(params).content
         feed = feedparser.parse(content)
         if feed.bozo:
@@ -246,7 +264,15 @@ def main(day=None):
             # 已明确记录全量抓取的日报无需再次依赖 arXiv 才能确认已完成。
             print_report(day, report)
             return
-        entries = query('(cat:math.AP) AND ' + date_query(start, end), start, end)
+        saved = STATE / 'pending' / ('arxiv_analysis_' + day.isoformat() + '_12-00-00.md')
+        if saved.exists():
+            head = dict(re.findall(r'^(\w+):\s*(.*)$', saved.read_text(encoding='utf-8').split('---', 2)[1], re.M))
+            total = int(head['total_papers'])
+            if total <= 0 or int(head['completed_papers']) != total or int(head['skipped_papers']) != 0:
+                raise RuntimeError('待发布报告不完整，不能复用')
+            entries = [None] * total
+        else:
+            entries = query('(cat:math.AP) AND ' + date_query(start, end), start, end)
         if not entries:
             exception = schedule_for(day)
             if exception.get('no_announcement'):
@@ -368,6 +394,8 @@ def print_author_updates(start, end):
     # 作者接口异常不能抹掉已完成的日报，也不能被描述成“没有新论文”。
     try:
         news = author_news(start, end)
+    except RateLimited:
+        raise
     except Exception:
         logging.exception('关注作者检索失败')
         print('\n⚠️ 关注作者检索暂时失败，本次无法确认是否有新论文；日报结果不受影响。')

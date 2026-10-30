@@ -46,7 +46,7 @@ def test_query_fetches_all_pages_and_excludes_end(monkeypatch):
     ]
     def get(url, params, timeout):
         calls.append(params['start'])
-        return SimpleNamespace(content=b'feed', raise_for_status=lambda: None)
+        return SimpleNamespace(status_code=200, content=b'feed', raise_for_status=lambda: None)
     monkeypatch.setattr(backup.requests, 'get', get)
     monkeypatch.setattr(backup.feedparser, 'parse', lambda _: feeds.pop(0))
     monkeypatch.setattr(backup.time, 'sleep', lambda _: None)
@@ -83,13 +83,19 @@ def response(status, headers=None):
     return result
 
 
-def test_rate_limit_honors_retry_after_and_recovers(monkeypatch):
-    responses = iter([response(429, {'Retry-After': '180'}), response(200)])
-    waits = []
-    monkeypatch.setattr(backup.requests, 'get', lambda *a, **kw: next(responses))
-    monkeypatch.setattr(backup.time, 'sleep', waits.append)
-    assert backup.api_response({}).status_code == 200
-    assert 180 in waits
+def test_rate_limit_defers_without_in_process_retry(monkeypatch):
+    calls = []
+    def get(*a, **kw):
+        calls.append(1)
+        return response(429, {'Retry-After': '180'})
+    monkeypatch.setattr(backup.requests, 'get', get)
+    with pytest.raises(backup.RateLimited) as limited:
+        backup.api_response({})
+    assert limited.value.retry_at >= backup.time.time() + 179
+    assert len(calls) == 1
+    with pytest.raises(backup.RateLimited):
+        backup.api_response({'search_query': 'another date'})
+    assert len(calls) == 1
 
 
 def test_retry_after_http_date():
@@ -105,9 +111,9 @@ def test_repeated_429_is_failure_not_empty_result(monkeypatch):
         return response(429)
     monkeypatch.setattr(backup.requests, 'get', get)
     monkeypatch.setattr(backup.time, 'sleep', lambda _: None)
-    with pytest.raises(RuntimeError, match='5 次'):
+    with pytest.raises(backup.RateLimited):
         backup.api_response({})
-    assert len(calls) == 5
+    assert len(calls) == 1
 
 
 def test_non_retryable_error_fails_immediately(monkeypatch):
