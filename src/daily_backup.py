@@ -18,6 +18,7 @@ import urllib.parse
 import feedparser
 import requests
 from dotenv import load_dotenv
+from author_store import load_authors
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE = Path.home() / '.local/state/arxiv-paper-tracker'
@@ -183,9 +184,11 @@ def date_query(start, end):
 
 
 def author_news(start, end):
-    authors = json.loads((ROOT / 'authors.json').read_text(encoding='utf-8'))
+    authors = load_authors()
     found = {}
     for author in authors:
+        if not author.get('enabled', True):
+            continue
         for name in [author['name'], *author.get('aliases', [])]:
             # API 作者查询可能返回同名者；再核对完整姓名，仍提醒读者确认身份。
             entries = query('au:"%s" AND %s' % (name.replace('"', ''), date_query(start, end)), start, end)

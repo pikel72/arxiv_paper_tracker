@@ -58,6 +58,7 @@ def test_query_fetches_all_pages_and_excludes_end(monkeypatch):
 
 def test_author_search_has_no_category_filter_and_deduplicates(tmp_path, monkeypatch):
     (tmp_path / 'authors.json').write_text('[{"name":"Yongzhong Sun","aliases":["Y. Sun"]}]', encoding='utf-8')
+    monkeypatch.setenv('ARXIV_AUTHORS_FILE', str(tmp_path / 'authors.json'))
     monkeypatch.setattr(backup, 'ROOT', tmp_path)
     entry = SimpleNamespace(id='http://arxiv.org/abs/1234.56789', title='Example',
         authors=[SimpleNamespace(name='Yongzhong Sun'), SimpleNamespace(name='Y. Sun')],

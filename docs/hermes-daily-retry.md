@@ -19,3 +19,9 @@
 
 完成标记先于 stdout 写入，以避免后续重复执行。若 Hermes 投递失败，报告仍然
 算已完成，不会自动重新分析或重复推送；摘要保存在状态文件中便于人工查看。
+
+Hermes 操作 skill 的源文件是 `hermes-skills/arxiv-daily-ops/SKILL.md`，安装到
+`~/.hermes/skills/research/arxiv-daily-ops/`。手动检查/发布使用 `src/tracker_ops.py`。
+关注作者的权威库为 `~/.config/arxiv-paper-tracker/authors.json`，使用
+`src/manage_authors.py` 管理；仓库 `authors.json` 仅作初始化种子。
+新安装时运行 `manage_authors.py init`，已有个人库会保留，不被更新覆盖。
