@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+from zoneinfo import ZoneInfo
 
 import feedparser
 import requests
@@ -54,7 +55,7 @@ def retry_delay(response, attempt):
     return delay
 
 
-def api_response(params):
+def api_response(params, url=None):
     """跨查询串行访问，防止作者查询和分页在三秒间隔内连续请求。"""
     STATE.mkdir(parents=True, exist_ok=True)
     with (STATE / 'api.lock').open('a+') as lock:
@@ -73,7 +74,7 @@ def api_response(params):
             lock.flush()
             response = None
             try:
-                response = requests.get(API, params=params, timeout=60)
+                response = requests.get(url or API, params=params, timeout=60)
                 if response.status_code == 429:
                     retry_at = time.time() + retry_delay(response, attempt)
                     # 服务端冷却期是全局限制，跨报告日期也必须遵守。
@@ -134,14 +135,14 @@ def window(day):
         return None
     days = (4, 4, 2, 2, 2)[day.weekday()]
     end_days = (3, 1, 1, 1, 1)[day.weekday()]
-    at = lambda n: dt.datetime.combine(day - dt.timedelta(days=n), dt.time(18), dt.timezone.utc)
+    at = lambda n: dt.datetime.combine(day - dt.timedelta(days=n), dt.time(14), ZoneInfo('America/New_York')).astimezone(dt.timezone.utc)
     # 官方暂停公告后次日需补齐积压区间，否则仅恢复网络仍会漏掉一天。
     override = schedule_for(day).get('start_override')
     return dt.datetime.fromisoformat(override) if override else at(days), at(end_days)
 
 
 def author_window(day):
-    end = dt.datetime.combine(day - dt.timedelta(days=1), dt.time(18), dt.timezone.utc)
+    end = dt.datetime.combine(day - dt.timedelta(days=1), dt.time(14), ZoneInfo('America/New_York')).astimezone(dt.timezone.utc)
     override = schedule_for(day).get('author_start_override')
     return dt.datetime.fromisoformat(override) if override else end - dt.timedelta(days=1), end
 
@@ -289,7 +290,22 @@ def main(day=None):
         except BlockingIOError:
             print('📚 论文日报已有服务器任务正在运行。')
             return
+        exception = schedule_for(day)
+        if exception.get('no_announcement'):
+            print(f'📚 {day} arXiv 日报：本期新增 0 篇，官方暂停发布。')
+            print(exception['reason'])
+            print('公告：' + exception['source'])
+            print('恢复发布后的日报会合并补齐积压区间。')
+            print_author_updates(*author_window(day))
+            return
+        from announcements import manifest, entries_for, verify
+        listing = manifest(day)
         saved = STATE / 'pending' / ('arxiv_analysis_' + day.isoformat() + '_12-00-00.md')
+        if saved.exists() and not verify(saved.read_text(encoding='utf-8'), listing):
+            # 只归档该日不足公告清单的成品，保留模型缓存用于补齐。
+            archive = STATE / 'backups' / ('coverage-' + str(day) + '-' + str(time.time_ns()))
+            archive.mkdir(parents=True)
+            saved.replace(archive / saved.name)
         if saved.exists():
             # 发布重试完全复用成品，不再依赖抓取、模型配置查询或模型初始化。
             from tracker_ops import validate_report
@@ -299,13 +315,13 @@ def main(day=None):
             print_report(day, report)
             return
         try:
-            sync_pages()
+            sync_pages(quick=True)
             report = report_for(day)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             # 网站暂时不可达时仍生成待发布文件；发布前必须再次核对远端。
             logging.warning('暂时无法检查网站，先生成本地待发布报告')
             report = None
-        if report and report[1].get('selection_capped', '').lower() == 'false':
+        if report and report[1].get('selection_capped', '').lower() == 'false' and verify(report[0].read_text(encoding='utf-8'), listing):
             # 已明确记录全量抓取的日报无需再次依赖 arXiv 才能确认已完成。
             print_report(day, report)
             return
@@ -317,7 +333,7 @@ def main(day=None):
                 raise RuntimeError('待发布报告不完整，不能复用')
             entries = [None] * total
         else:
-            entries = query('(cat:math.AP) AND ' + date_query(start, end), start, end)
+            entries = entries_for(listing)
         if not entries:
             exception = schedule_for(day)
             if exception.get('no_announcement'):
@@ -329,6 +345,8 @@ def main(day=None):
                 return
             raise RuntimeError('没有检索到论文，请核对 arXiv 公告和网络状态')
         report = report_for(day, len(entries)) if report else None
+        if report and not verify(report[0].read_text(encoding='utf-8'), listing):
+            report = None
         if not report:
             # 单独保存运行日志，避免把模型内容或凭据混入 Hermes 消息。
             load_dotenv(ROOT / '.env', override=True)
@@ -370,7 +388,7 @@ def main(day=None):
                         except Exception as exc:
                             logging.warning('检查远端日报失败，稍后重试: %s', exc)
                         else:
-                            if current:
+                            if current and verify(current[0].read_text(encoding='utf-8'), listing):
                                 raise AlreadyPublished(day, current)
                     return original_record(*args)
 
@@ -399,6 +417,9 @@ def main(day=None):
                 raise RuntimeError('报告未全部完成，保留本地结果并停止发布')
             if 'selection_capped:' not in text.split('---', 2)[1]:
                 text = text.replace('---\n', f'---\nselection_capped: false\nsearch_total_results: {len(entries)}\n', 1)
+            if not verify(text, listing):
+                raise RuntimeError('报告 ID 与官方公告清单不一致，禁止发布和写入完成标记')
+            text = text.replace('---\n', f'---\nannouncement_sha256: {listing["sha256"]}\nannouncement_count: {listing["expected"]}\n', 1)
             pending.parent.mkdir(parents=True, exist_ok=True)
             if not pending.exists():
                 pending.write_text(text, encoding='utf-8')
@@ -446,15 +467,14 @@ if __name__ == '__main__':
             if not bounds:
                 print('true')
             else:
-                start, end = bounds
-                entries = query('(cat:math.AP) AND ' + date_query(start, end), start, end)
-                if not entries:
-                    if schedule_for(day).get('no_announcement'):
-                        print('true')
-                        sys.exit(0)
-                    raise RuntimeError('arXiv 未返回论文，无法判断日报是否完成')
-                sync_pages()
-                print('true' if report_for(day, len(entries)) else 'false')
+                if schedule_for(day).get('no_announcement'):
+                    print('true')
+                else:
+                    from announcements import manifest, verify
+                    listing = manifest(day)
+                    sync_pages(quick=True)
+                    report = report_for(day, listing['expected'])
+                    print('true' if report and verify(report[0].read_text(encoding='utf-8'), listing) else 'false')
         else:
             parser = argparse.ArgumentParser(description='服务器备用日报和历史日期补跑')
             parser.add_argument('--date', type=dt.date.fromisoformat, help='补跑的报告日期 YYYY-MM-DD（北京时间）')

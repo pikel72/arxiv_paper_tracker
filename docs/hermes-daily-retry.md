@@ -28,3 +28,9 @@ Hermes 操作 skill 的源文件是 `hermes-skills/arxiv-daily-ops/SKILL.md`，�
 关注作者的权威库为 `~/.config/arxiv-paper-tracker/authors.json`，使用
 `src/manage_authors.py` 管理；仓库 `authors.json` 仅作初始化种子。
 新安装时运行 `manage_authors.py init`，已有个人库会保留，不被更新覆盖。
+
+日报论文范围以 `announcements/YYYY-MM-DD.json` 保存的官方公告日 ID 清单为准，
+包括当日新投稿和交叉分类，不包括 replacements。API 仅按这些 ID 补取元数据，
+不按首次提交日期排除延迟公告论文。发布前逐项核对报告的 `**arXiv ID**`，
+缺篇、重复或公告列表分页不全均不允许写完成标记。生成的报告记录公告数量及 SHA-256。
+提交时间区间仅用于辅助显示与作者查询，按 America/New_York 14:00 自动转换夏/冬令时。

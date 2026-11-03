@@ -13,6 +13,10 @@ import daily_backup as backup
 @pytest.fixture(autouse=True)
 def isolated_state(tmp_path, monkeypatch):
     monkeypatch.setattr(backup, 'STATE', tmp_path / 'state')
+    import announcements
+    monkeypatch.setattr(announcements, 'manifest', lambda day: {'expected': 12, 'sha256': 'test'})
+    monkeypatch.setattr(announcements, 'verify', lambda *a: True)
+    monkeypatch.setattr(announcements, 'entries_for', lambda *a: backup.query('', None, None))
 
 
 def test_windows_match_original_weekday_logic():
@@ -128,12 +132,14 @@ def test_non_retryable_error_fails_immediately(monkeypatch):
     assert len(calls) == 1
 
 
-def test_full_published_report_skips_api(monkeypatch):
-    day = dt.date(2026, 10, 29)
-    report = (Path('report.md'), {'selection_capped': 'false', 'total_papers': '42'})
+def test_full_published_report_skips_api(monkeypatch, tmp_path):
+    day = dt.date(2026, 10, 28)
+    path = tmp_path / 'report.md'
+    path.write_text('checked by announcement verifier')
+    report = (path, {'selection_capped': 'false', 'total_papers': '42'})
     bounds = backup.window(day)
     monkeypatch.setattr(backup, 'window', lambda _: bounds)
-    monkeypatch.setattr(backup, 'sync_pages', lambda: None)
+    monkeypatch.setattr(backup, 'sync_pages', lambda **kw: None)
     monkeypatch.setattr(backup, 'report_for', lambda *a: report)
     monkeypatch.setattr(backup, 'query', lambda *a: pytest.fail('已发布的全量日报不应再次抓取'))
     printed = []
@@ -163,7 +169,7 @@ def test_maintenance_backlog_included_in_next_report():
 
 
 def test_confirmed_maintenance_empty_is_explained(monkeypatch, capsys):
-    monkeypatch.setattr(backup, 'sync_pages', lambda: None)
+    monkeypatch.setattr(backup, 'sync_pages', lambda **kw: None)
     monkeypatch.setattr(backup, 'report_for', lambda *a: None)
     monkeypatch.setattr(backup, 'query', lambda *a: [])
     monkeypatch.setattr(backup, 'schedule_for', lambda _: {
@@ -177,7 +183,7 @@ def test_confirmed_maintenance_empty_is_explained(monkeypatch, capsys):
 
 
 def test_unexplained_empty_still_fails(monkeypatch):
-    monkeypatch.setattr(backup, 'sync_pages', lambda: None)
+    monkeypatch.setattr(backup, 'sync_pages', lambda **kw: None)
     monkeypatch.setattr(backup, 'report_for', lambda *a: None)
     monkeypatch.setattr(backup, 'query', lambda *a: [])
     monkeypatch.setattr(backup, 'schedule_for', lambda _: {})

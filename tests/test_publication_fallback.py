@@ -17,6 +17,9 @@ TEXT = '---\nreport_date: 2026-11-03\npartial_run: False\nselection_capped: fals
 
 @pytest.fixture
 def pending(tmp_path, monkeypatch):
+    import announcements
+    monkeypatch.setattr(announcements, 'manifest', lambda day: {'expected': 40})
+    monkeypatch.setattr(announcements, 'verify', lambda *a: True)
     monkeypatch.setattr(backup, 'STATE', tmp_path)
     monkeypatch.setattr(retry, 'adopted_completion', lambda _: False)
     monkeypatch.setattr(backup, 'author_news', lambda *a: {})

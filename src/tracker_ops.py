@@ -28,6 +28,11 @@ def validate_report(day, text):
             or fields.get('partial_run', '').lower() != 'false'
             or fields.get('selection_capped', '').lower() != 'false'):
         raise ValueError('报告日期不符、被截断或未完整完成，拒绝发布')
+    if fields.get('announcement_sha256'):
+        from announcements import manifest, verify
+        listing = manifest(day)
+        if fields['announcement_sha256'] != listing['sha256'] or not verify(text, listing):
+            raise ValueError('报告未覆盖官方公告清单，拒绝发布')
     return fields
 
 
@@ -58,7 +63,15 @@ def gh_api(path, payload=None):
 def status(day):
     path = pending_path(day)
     cooldown = backup.STATE / 'api-retry-after'
+    listing_path = backup.STATE / 'announcements' / (str(day) + '.json')
+    coverage = None
+    if listing_path.exists():
+        from announcements import verify
+        listing = json.loads(listing_path.read_text(encoding='utf-8'))
+        coverage = {'expected': listing['expected'], 'sha256': listing['sha256'],
+                    'pending_verified': verify(path.read_text(encoding='utf-8'), listing) if path.exists() else False}
     return {'report_date': day.isoformat(), 'state': retry.read_state(day),
+            'announcement_coverage': coverage,
             'pending_report': str(path) if path.exists() else None,
             'pending_metadata': metadata(path.read_text(encoding='utf-8')) if path.exists() else None,
             'authors_file': str(library_path()),
@@ -75,7 +88,7 @@ def publish_pending(day):
     folder = f'content/report/{day:%Y/%m}'
     endpoint = 'repos/pikel72/pages_src/contents/'
     files = gh_api(endpoint + folder) or []
-    name, commit = path.name, None
+    name, commit, replacement_sha = path.name, None, None
     for item in files:
         if not item['name'].startswith(f'arxiv_analysis_{day}') or not item['name'].endswith('.md'):
             continue
@@ -90,13 +103,21 @@ def publish_pending(day):
                 raise ValueError('目标文件已存在且不完整；保留它，需明确决定如何替换')
             continue
         if existing['total_papers'] != fields['total_papers']:
+            from announcements import manifest, verify, report_ids
+            if fields.get('announcement_sha256') and verify(text, manifest(day)) and set(report_ids(content)) < set(report_ids(text)):
+                # 公告清单已证明旧版漏篇时，保留 Git 历史并在原路径补全。
+                name, replacement_sha = item['name'], remote['sha']
+                continue
             raise ValueError('远端同日报告篇数不同，请先核对，不能自动覆盖或重复发布')
         name = item['name']
         break
     else:
-        result = gh_api(endpoint + folder + '/' + name, {
+        payload = {
             'message': f'[✨ 新增] 补齐{day}论文分析报告', 'branch': 'main',
-            'content': base64.b64encode(text.encode('utf-8')).decode('ascii')})
+            'content': base64.b64encode(text.encode('utf-8')).decode('ascii')}
+        if replacement_sha:
+            payload['sha'] = replacement_sha
+        result = gh_api(endpoint + folder + '/' + name, payload)
         commit = result['commit']['sha']
         remote = gh_api(endpoint + folder + '/' + name)
         blob = text.encode('utf-8')

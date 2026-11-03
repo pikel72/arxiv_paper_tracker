@@ -43,6 +43,10 @@ def report_succeeded(day, text):
 def adopted_completion(day):
     # 部署时旧进程仍可能在运行：其已成功投递的输出同样算完成，不能重复运行。
     folder = Path.home() / '.hermes/cron'
+    manifest_path = backup.STATE / 'announcements' / (str(day) + '.json')
+    if not manifest_path.exists():
+        return False
+    expected = json.loads(manifest_path.read_text(encoding='utf-8'))['expected']
     jobs_path = folder / 'jobs.json'
     if not jobs_path.exists():
         return False
@@ -51,7 +55,8 @@ def adopted_completion(day):
     if not any(j.get('id') == JOB_ID and j.get('last_status') == 'ok' for j in jobs):
         return False
     output = folder / 'output' / JOB_ID
-    return any(report_succeeded(day, p.read_text(encoding='utf-8')) for p in output.glob('*.md'))
+    return any(report_succeeded(day, text) and f'共 {expected} 篇，已完成 {expected} 篇' in text
+               for p in output.glob('*.md') for text in [p.read_text(encoding='utf-8')])
 
 
 def run_attempt(day=None, now=None):
