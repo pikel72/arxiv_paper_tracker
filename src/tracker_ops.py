@@ -39,11 +39,17 @@ def gh_api(path, payload=None):
     command = ['gh', 'api', path]
     if payload is not None:
         command += ['--method', 'PUT', '--input', '-']
-    result = subprocess.run(command, input=json.dumps(payload) if payload is not None else None,
-                            text=True, capture_output=True, timeout=90)
+    try:
+        result = subprocess.run(command, input=json.dumps(payload) if payload is not None else None,
+                                text=True, capture_output=True, timeout=90)
+    except subprocess.TimeoutExpired as exc:
+        raise backup.PublicationDeferred('GitHub API 连接超时') from exc
     if result.returncode:
         if payload is None and 'HTTP 404' in result.stderr:
             return None
+        status = re.search(r'HTTP (\d{3})', result.stderr)
+        if status is None or int(status[1]) in {408, 429, 500, 502, 503, 504} or 'rate limit' in result.stderr.lower():
+            raise backup.PublicationDeferred('GitHub API 暂时不可达，保留待发布文件')
         # 只报告错误类型；不要把凭据、完整报告或服务器配置混入反馈。
         raise RuntimeError('GitHub API 请求失败，请检查 gh 登录、仓库权限和网络')
     return json.loads(result.stdout)
@@ -61,6 +67,48 @@ def status(day):
             'analysis_log': str(backup.STATE / f'run-{day}.log')}
 
 
+def publish_pending(day):
+    """调用方已持有运行锁时发布；自动流程在完整反馈后自行写完成状态。"""
+    path = pending_path(day)
+    text = path.read_text(encoding='utf-8')
+    fields = validate_report(day, text)
+    folder = f'content/report/{day:%Y/%m}'
+    endpoint = 'repos/pikel72/pages_src/contents/'
+    files = gh_api(endpoint + folder) or []
+    name, commit = path.name, None
+    for item in files:
+        if not item['name'].startswith(f'arxiv_analysis_{day}') or not item['name'].endswith('.md'):
+            continue
+        remote = gh_api(endpoint + item['path'])
+        if not remote:
+            continue
+        content = base64.b64decode(remote['content']).decode('utf-8')
+        try:
+            existing = validate_report(day, content)
+        except ValueError:
+            if item['name'] == name:
+                raise ValueError('目标文件已存在且不完整；保留它，需明确决定如何替换')
+            continue
+        if existing['total_papers'] != fields['total_papers']:
+            raise ValueError('远端同日报告篇数不同，请先核对，不能自动覆盖或重复发布')
+        name = item['name']
+        break
+    else:
+        result = gh_api(endpoint + folder + '/' + name, {
+            'message': f'[✨ 新增] 补齐{day}论文分析报告', 'branch': 'main',
+            'content': base64.b64encode(text.encode('utf-8')).decode('ascii')})
+        commit = result['commit']['sha']
+        remote = gh_api(endpoint + folder + '/' + name)
+        blob = text.encode('utf-8')
+        expected = hashlib.sha1(b'blob ' + str(len(blob)).encode() + b'\0' + blob).hexdigest()
+        if not remote or remote['sha'] != expected:
+            raise RuntimeError('提交后内容校验失败，未写入完成标记')
+    url = 'https://pikel72.github.io/report/' + name[:-3] + '/'
+    summary = f'📚 {day} arXiv 日报：math.AP 共 {fields["total_papers"]} 篇，已完成 {fields["completed_papers"]} 篇。\n报告：{url}\n'
+
+    return {'report_date': str(day), 'url': url, 'commit': commit, 'status': 'complete', 'name': name, 'summary': summary}
+
+
 def publish(day):
     if retry.read_state(day).get('status') == 'complete':
         return {'report_date': str(day), 'status': 'already_complete', 'state': retry.read_state(day)}
@@ -68,45 +116,12 @@ def publish(day):
     with (backup.STATE / f'attempt-{day}.lock').open('a') as attempt, (backup.STATE / 'daily.lock').open('a') as active:
         fcntl.flock(attempt, fcntl.LOCK_EX | fcntl.LOCK_NB)
         fcntl.flock(active, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        path = pending_path(day)
-        text = path.read_text(encoding='utf-8')
-        fields = validate_report(day, text)
-        folder = f'content/report/{day:%Y/%m}'
-        endpoint = 'repos/pikel72/pages_src/contents/'
-        files = gh_api(endpoint + folder) or []
-        name, commit = path.name, None
-        for item in files:
-            if not item['name'].startswith(f'arxiv_analysis_{day}') or not item['name'].endswith('.md'):
-                continue
-            remote = gh_api(endpoint + item['path'])
-            if not remote:
-                continue
-            content = base64.b64decode(remote['content']).decode('utf-8')
-            try:
-                existing = validate_report(day, content)
-            except ValueError:
-                if item['name'] == name:
-                    raise ValueError('目标文件已存在且不完整；保留它，需明确决定如何替换')
-                continue
-            if existing['total_papers'] != fields['total_papers']:
-                raise ValueError('远端同日报告篇数不同，请先核对，不能自动覆盖或重复发布')
-            name = item['name']
-            break
-        else:
-            result = gh_api(endpoint + folder + '/' + name, {
-                'message': f'[✨ 新增] 补齐{day}论文分析报告', 'branch': 'main',
-                'content': base64.b64encode(text.encode('utf-8')).decode('ascii')})
-            commit = result['commit']['sha']
-            remote = gh_api(endpoint + folder + '/' + name)
-            blob = text.encode('utf-8')
-            expected = hashlib.sha1(b'blob ' + str(len(blob)).encode() + b'\0' + blob).hexdigest()
-            if not remote or remote['sha'] != expected:
-                raise RuntimeError('提交后内容校验失败，未写入完成标记')
-        url = 'https://pikel72.github.io/report/' + name[:-3] + '/'
-        summary = f'📚 {day} arXiv 日报：math.AP 共 {fields["total_papers"]} 篇，已完成 {fields["completed_papers"]} 篇。\n报告：{url}\n'
+        if retry.read_state(day).get('status') == 'complete':
+            return {'report_date': str(day), 'status': 'already_complete'}
+        result = publish_pending(day)
         retry.save_state(day, {'status': 'complete', 'finished_at': dt.datetime.now(backup.TZ).isoformat(),
-                               'summary': summary, 'manual_publication': True, 'commit': commit})
-        return {'report_date': str(day), 'url': url, 'commit': commit, 'status': 'complete'}
+                              'summary': result['summary'], 'manual_publication': True, 'commit': result['commit']})
+        return result
 
 
 def main(argv=None):

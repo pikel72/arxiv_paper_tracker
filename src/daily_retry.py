@@ -104,6 +104,10 @@ def run_attempt(day=None, now=None):
                     save_state(day, {'status': 'pending', 'reason': '429', 'retry_at': exc.retry_at})
                     logging.info('HTTP 429，本次静默结束，等待下一个时段')
                     return 0
+                except backup.PublicationDeferred:
+                    save_state(day, {'status': 'pending', 'reason': 'publication_network'})
+                    logging.exception('发布链路暂不可用，本次静默结束，下一时段复用完整报告')
+                    return 0
                 except Exception as exc:
                     save_state(day, {'status': 'pending', 'reason': type(exc).__name__})
                     logging.exception('本次未完成')

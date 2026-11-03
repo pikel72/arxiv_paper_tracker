@@ -35,6 +35,10 @@ class RateLimited(RuntimeError):
         self.retry_at = retry_at
 
 
+class PublicationDeferred(RuntimeError):
+    """Git 和官方 API 均暂不可用，保留完整报告留待下一时段发布。"""
+
+
 def retry_delay(response, attempt):
     """限流需要分钟级冷却；优先遵守服务端给出的恢复时间。"""
     delay = min(60 * (2 ** attempt), 600)
@@ -240,6 +244,35 @@ def backup_paper(entry):
     return paper
 
 
+def publish_report(day, pending, text, total):
+    try:
+        sync_pages(quick=True)
+        report = report_for(day, total)
+        if not report:
+            target = PAGES / 'content/report' / day.strftime('%Y/%m') / pending.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding='utf-8')
+            git('add', '--', str(target.relative_to(PAGES)), cwd=PAGES)
+            git('-c', 'user.name=pikel72', '-c', 'user.email=github-actions[bot]@users.noreply.github.com',
+                'commit', '-m', '[✨ 新增] 补充每日 arXiv 论文报告', cwd=PAGES)
+            try:
+                git('push', 'origin', 'HEAD:main', cwd=PAGES, timeout=30, attempts=1)
+            except subprocess.CalledProcessError:
+                # 其他链路抢先推送时重新检查，不能盲目覆盖。
+                git('fetch', 'origin', 'main', cwd=PAGES, timeout=20, attempts=1)
+                git('checkout', '--detach', 'origin/main', cwd=PAGES)
+                if not report_for(day, total):
+                    raise
+            report = report_for(day, total)
+        return report
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        logging.warning('Git 发布链路超时或失败，改用 GitHub Contents API 复用完整报告')
+        from tracker_ops import publish_pending
+        result = publish_pending(day)
+        head = dict(re.findall(r'^(\w+):\s*(.*)$', text.split('---', 2)[1], re.M))
+        return Path(result['name']), head
+
+
 def main(day=None):
     day = day or dt.datetime.now(TZ).date()
     bounds = window(day)
@@ -255,6 +288,15 @@ def main(day=None):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             print('📚 论文日报已有服务器任务正在运行。')
+            return
+        saved = STATE / 'pending' / ('arxiv_analysis_' + day.isoformat() + '_12-00-00.md')
+        if saved.exists():
+            # 发布重试完全复用成品，不再依赖抓取、模型配置查询或模型初始化。
+            from tracker_ops import validate_report
+            text = saved.read_text(encoding='utf-8')
+            fields = validate_report(day, text)
+            report = publish_report(day, saved, text, int(fields['total_papers']))
+            print_report(day, report)
             return
         try:
             sync_pages()
@@ -360,24 +402,7 @@ def main(day=None):
             pending.parent.mkdir(parents=True, exist_ok=True)
             if not pending.exists():
                 pending.write_text(text, encoding='utf-8')
-            sync_pages()
-            report = report_for(day, len(entries))
-            if not report:
-                target = PAGES / 'content/report' / day.strftime('%Y/%m') / pending.name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(text, encoding='utf-8')
-                git('add', '--', str(target.relative_to(PAGES)), cwd=PAGES)
-                git('-c', 'user.name=pikel72', '-c', 'user.email=github-actions[bot]@users.noreply.github.com',
-                    'commit', '-m', '[✨ 新增] 补充每日 arXiv 论文报告', cwd=PAGES)
-                try:
-                    git('push', 'origin', 'HEAD:main', cwd=PAGES)
-                except subprocess.CalledProcessError:
-                    # 其他链路抢先推送时重新检查，不能盲目覆盖。
-                    git('fetch', 'origin', 'main', cwd=PAGES)
-                    git('checkout', '--detach', 'origin/main', cwd=PAGES)
-                    if not report_for(day, len(entries)):
-                        raise
-                report = report_for(day, len(entries))
+            report = publish_report(day, pending, text, len(entries))
         print_report(day, report)
 
 
