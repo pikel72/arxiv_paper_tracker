@@ -32,7 +32,7 @@ class DummyPaper:
         return "test.12345"
 
 
-class FakeFitzPage:
+class FakePyMuPDFPage:
     def __init__(self, text):
         self.text = text
 
@@ -41,7 +41,7 @@ class FakeFitzPage:
         return self.text
 
 
-class FakeFitzDocument:
+class FakePyMuPDFDocument:
     def __init__(self, page_texts):
         self.page_texts = page_texts
 
@@ -55,7 +55,7 @@ class FakeFitzDocument:
         return len(self.page_texts)
 
     def __getitem__(self, index):
-        return FakeFitzPage(self.page_texts[index])
+        return FakePyMuPDFPage(self.page_texts[index])
 
 
 class FakePlumberPage:
@@ -95,9 +95,9 @@ def cleanup_disabled_request():
 
 
 def test_extract_pdf_text_prefers_pymupdf():
-    fake_fitz = SimpleNamespace(open=lambda _: FakeFitzDocument(["First page", "Second page"]))
+    fake_pymupdf = SimpleNamespace(open=lambda _: FakePyMuPDFDocument(["First page", "Second page"]))
 
-    with patch.object(analyzer, "fitz", fake_fitz), patch.object(
+    with patch.object(analyzer, "pymupdf", fake_pymupdf), patch.object(
         analyzer.pdfplumber,
         "open",
         side_effect=AssertionError("pdfplumber should not be used"),
@@ -110,10 +110,10 @@ def test_extract_pdf_text_prefers_pymupdf():
 
 
 def test_extract_pdf_text_falls_back_to_pdfplumber_when_pymupdf_fails():
-    fake_fitz = SimpleNamespace(open=lambda _: (_ for _ in ()).throw(RuntimeError("fitz failed")))
+    fake_pymupdf = SimpleNamespace(open=lambda _: (_ for _ in ()).throw(RuntimeError("pymupdf failed")))
     fake_plumber = FakePlumberDocument(["Fallback page"])
 
-    with patch.object(analyzer, "fitz", fake_fitz), patch.object(analyzer.pdfplumber, "open", return_value=fake_plumber):
+    with patch.object(analyzer, "pymupdf", fake_pymupdf), patch.object(analyzer.pdfplumber, "open", return_value=fake_plumber):
         text = analyzer.extract_pdf_text("paper.pdf", max_pages=1)
 
     assert "Fallback page" in text

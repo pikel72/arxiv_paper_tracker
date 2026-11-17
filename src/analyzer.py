@@ -4,9 +4,9 @@ import logging
 import re
 
 try:
-    import fitz
+    import pymupdf
 except Exception:
-    fitz = None
+    pymupdf = None
 
 import pdfplumber
 try:
@@ -499,10 +499,10 @@ def _apply_analysis_cleanup(analysis_blocks: StructuredPaperAnalysis, paper=None
 def extract_pdf_text(pdf_path, max_pages=10):
     pymupdf_error = None
 
-    if fitz is not None:
+    if pymupdf is not None:
         try:
             text_parts = []
-            with fitz.open(pdf_path) as pdf:
+            with pymupdf.open(pdf_path) as pdf:
                 if max_pages is None:
                     pages_to_read = len(pdf)
                 else:
