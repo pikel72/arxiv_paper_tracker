@@ -12,6 +12,7 @@ import re
 import time
 
 import daily_backup as backup
+from announcements import AnnouncementPending, manifest
 
 JOB_ID = '023a6e28ecf3'
 
@@ -98,6 +99,9 @@ def run_attempt(day=None, now=None):
         try:
             with log_path.open('a', encoding='utf-8') as log, redirect_stdout(buffer), redirect_stderr(log):
                 try:
+                    # 先确认公告日期；列表未更新时无需消耗关注作者的 API 请求。
+                    if backup.window(day) and not backup.schedule_for(day).get('no_announcement'):
+                        manifest(day)
                     # 作者检索先完成；限流时不发布残缺通知，成功后复用这份结果。
                     news = original_authors(*backup.author_window(day))
                     backup.author_news = lambda *a: news
@@ -108,6 +112,11 @@ def run_attempt(day=None, now=None):
                 except backup.RateLimited as exc:
                     save_state(day, {'status': 'pending', 'reason': '429', 'retry_at': exc.retry_at})
                     logging.info('HTTP 429，本次静默结束，等待下一个时段')
+                    return 0
+                except AnnouncementPending as exc:
+                    save_state(day, {'status': 'pending', 'reason': 'announcement_pending',
+                                     'latest_announcement': exc.latest})
+                    logging.info('%s，本次静默结束，等待下一个时段', exc)
                     return 0
                 except backup.PublicationDeferred:
                     save_state(day, {'status': 'pending', 'reason': 'publication_network'})

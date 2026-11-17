@@ -17,6 +17,18 @@ def test_announcement_ids_include_late_announced_and_ignore_other_day():
     assert result['expected'] == 3 and result['ids'] == ['2611.00137','2611.03640','2611.03642']
 
 
+def test_valid_listing_still_on_previous_day_is_pending():
+    html = '<h3>Mon, 16 Nov 2026 (showing 1 of 1 entries )</h3><a href="/abs/2611.00001">Abstract</a>'
+    with pytest.raises(a.AnnouncementPending) as error:
+        a.parse_listing(html, dt.date(2026, 11, 17))
+    assert error.value.latest == '2026-11-16'
+
+
+def test_unrecognized_listing_is_a_parse_error():
+    with pytest.raises(ValueError):
+        a.parse_listing('<h3>Service message</h3>', dt.date(2026, 11, 17))
+
+
 @pytest.mark.parametrize('links', ['<a href="/abs/2611.00001">a</a>', '<a href="/abs/2611.00001">a</a>'*2])
 def test_partial_or_duplicate_list_rejected(links):
     with pytest.raises(ValueError):

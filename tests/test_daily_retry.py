@@ -15,6 +15,7 @@ import daily_backup as backup
 def state(tmp_path, monkeypatch):
     monkeypatch.setattr(backup, 'STATE', tmp_path)
     monkeypatch.setattr(retry, 'adopted_completion', lambda _: False)
+    monkeypatch.setattr(retry, 'manifest', lambda _: None)
 
 
 def moment(day, hour):
@@ -68,6 +69,30 @@ def test_all_four_429_remain_pending_and_silent(monkeypatch, capsys):
     text = capsys.readouterr()
     assert text.out == text.err == ''
     assert retry.read_state(dt.date(2026, 10, 30))['status'] == 'pending'
+
+
+def test_announcement_pending_skips_authors_until_next_slot(monkeypatch, capsys):
+    day = dt.date(2026, 10, 30)
+    calls = []
+
+    def manifest(day):
+        calls.append('announcement')
+        if len(calls) == 1:
+            raise retry.AnnouncementPending(day, '2026-10-29')
+
+    monkeypatch.setattr(retry, 'manifest', manifest)
+    monkeypatch.setattr(backup, 'author_news', lambda *args: calls.append('authors') or {})
+    monkeypatch.setattr(backup, 'main', success)
+    assert retry.run_attempt(now=moment(30, 12)) == 0
+    output = capsys.readouterr()
+    assert output.out == output.err == ''
+    assert calls == ['announcement']
+    assert retry.read_state(day) == {'status': 'pending', 'reason': 'announcement_pending',
+                                    'latest_announcement': '2026-10-29'}
+    assert retry.run_attempt(now=moment(30, 18)) == 0
+    assert calls == ['announcement', 'announcement', 'authors']
+    assert '115 篇' in capsys.readouterr().out
+    assert retry.read_state(day)['status'] == 'complete'
 
 
 def test_retry_after_prevents_early_network_call(monkeypatch, capsys):

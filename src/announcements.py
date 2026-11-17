@@ -8,6 +8,14 @@ import re
 import feedparser
 
 
+class AnnouncementPending(RuntimeError):
+    """官方列表已返回，但当天公告还不可用。"""
+
+    def __init__(self, day, latest):
+        self.latest = latest
+        super().__init__(f'{day} 的官方公告还未出现在列表中（最新公告日 {latest}）')
+
+
 def short_id(value):
     return re.sub(r'v\d+$', '', value.rsplit('/', 1)[-1])
 
@@ -38,6 +46,8 @@ class ListingParser(HTMLParser):
             self.heading = ' '.join(self.buffer.split())
             match = re.match(r'\w+, (\d+ \w+ \d+) \(showing (?:first \d+|\d+) of (\d+) entries', self.heading)
             if match:
+                if self.heading in self.days:
+                    raise ValueError('官方列表出现重复公告标题')
                 self.days[self.heading] = {'date': dt.datetime.strptime(match[1], '%d %b %Y').date().isoformat(),
                                            'expected': int(match[2]), 'ids': []}
 
@@ -46,6 +56,9 @@ def parse_listing(html, day):
     parser = ListingParser()
     parser.feed(html)
     matches = [v for v in parser.days.values() if v['date'] == str(day)]
+    latest = max((v['date'] for v in parser.days.values()), default=None)
+    if latest and str(day) > latest:
+        raise AnnouncementPending(day, latest)
     if len(matches) != 1:
         raise ValueError('官方列表中没有唯一的目标公告日，不能回退到提交时间猜测')
     result = matches[0]
